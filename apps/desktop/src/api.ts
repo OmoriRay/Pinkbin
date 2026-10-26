@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { isTauri } from './env';
 import * as mocks from './mocks';
+import { callAdvisor, isConfigured, loadSettings } from './advisorClient';
 
 export const api = {
   scan: (path: string) =>
@@ -66,8 +67,12 @@ export const api = {
       ? invoke<CondaEnv[]>('list_conda_envs', { condaRoot })
       : Promise.resolve([] as CondaEnv[]),
 
-  advise: (req: AdvisorRequest) =>
-    isTauri ? invoke<AdvisorResponse>('advise', { req }) : mocks.advise(req),
+  advise: async (req: AdvisorRequest): Promise<AdvisorResponse> => {
+    if (!isTauri) return mocks.advise(req);
+    const settings = loadSettings();
+    if (!isConfigured(settings)) throw new Error('AI 未配置，请先打开 AI 设置');
+    return callAdvisor(settings, req);
+  },
 
   inspect: (path: string, sampleCount: number) =>
     isTauri ? invoke<string[]>('inspect_path', { path, sampleCount }) : mocks.inspect(path, sampleCount),

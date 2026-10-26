@@ -17,6 +17,9 @@ export interface ChatTurn {
   // optional scaffold suggestion the user can act on inline
   scaffoldId?: string | null;
   pending?: boolean;
+  failed?: boolean;
+  requestStartedAt?: number;
+  durationMs?: number;
 }
 
 export interface ChatSession {

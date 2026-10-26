@@ -72,9 +72,10 @@ const SYSTEM: &str = r#"You are Pinkbin's local file advisor. Given a folder's m
 }
 
 Rules:
-- Be conservative. If uncertain, set needs_inspection=true and action="keep".
+- If the metadata is insufficient, set safe_to_delete=false, needs_inspection=true and action="keep". Use category="unknown" if the type is unclear, and explain what needs checking.
+- A filename, path, large size or old modification date alone is not proof that a file is safe to delete.
 - "user_content" (Documents/Pictures/Music/Source code) is never safe_to_delete.
-- "model_weights" (HuggingFace, Ollama models) is medium risk: deletable but expensive to redownload.
+- "model_weights" (HuggingFace, Ollama models) may be expensive to redownload; do not assume they are unused or safe to delete.
 - Do not include any prose outside the JSON object."#;
 
 pub async fn advise(provider: &Provider, req: &AdvisorRequest) -> anyhow::Result<AdvisorResponse> {

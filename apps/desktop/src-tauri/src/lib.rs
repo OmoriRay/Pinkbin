@@ -1,6 +1,12 @@
 use std::collections::HashMap;
+mod advisor_http;
+mod cache_cleaner;
+mod cleanup_history;
+mod disk_cleaner;
+mod portable_data;
+mod recycle_only;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use include_dir::{include_dir, Dir};
@@ -14,6 +20,45 @@ use pinkbin_scanner::{sample_paths, scan_with_stats, Node, ScanOptions, ScanStat
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+#[derive(serde::Serialize)]
+struct AppInfo {
+    version: &'static str,
+    edition: &'static str,
+    build_date: &'static str,
+}
+
+#[tauri::command]
+fn get_app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        edition: "自用版",
+        build_date: env!("PINKBIN_BUILD_DATE"),
+    }
+}
+
+fn app_data_dir(app: &AppHandle) -> PathBuf {
+    app.state::<portable_data::PortableData>().root.clone()
+}
+
+fn startup_error(message: &str) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        let message: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+        let title: Vec<u16> = "Pinkbin 无法启动".encode_utf16().chain(Some(0)).collect();
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                message.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    eprintln!("Pinkbin 无法启动：{message}");
+}
+
 // Compile-time embed of repo-root scaffolds/. Used as the lowest-priority
 // fallback in load_all_scaffolds so a portable raw exe (no resource_dir,
 // arbitrary cwd) still ships with all packaged scaffolds.
@@ -21,9 +66,121 @@ static EMBEDDED_SCAFFOLDS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../../
 
 #[derive(serde::Serialize, Clone)]
 struct ScanProgressEvent {
+    scan_id: Option<String>,
     files_seen: u64,
     bytes_seen: u64,
     current_path: String,
+}
+
+// Serialize shared results without cloning the directory tree on every poll.
+fn serialize_shared_option<T: serde::Serialize, S: serde::Serializer>(
+    value: &Option<Arc<T>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(&value.as_deref(), serializer)
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ScanSession {
+    scan_id: String,
+    path: String,
+    status: &'static str,
+    progress: Option<ScanProgressEvent>,
+    #[serde(serialize_with = "serialize_shared_option")]
+    result: Option<Arc<Node>>,
+    error: Option<String>,
+    stats: Option<ScanStatsEvent>,
+}
+
+#[derive(Default, Clone)]
+struct ScanSessionState(Arc<Mutex<Option<ScanSession>>>);
+
+#[tauri::command]
+fn get_scan_session(state: State<'_, ScanSessionState>) -> Result<Option<ScanSession>, String> {
+    Ok(state.0.lock().map_err(|e| e.to_string())?.clone())
+}
+
+#[tauri::command]
+fn start_scan_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sessions: State<'_, ScanSessionState>,
+    path: String,
+) -> Result<ScanSession, String> {
+    let compiled = compile_all(&state.scaffolds.lock().map_err(|e| e.to_string())?.clone());
+    let shared = sessions.inner().clone();
+    // Claim synchronously before scheduling work, closing duplicate-start races.
+    let mut slot = shared.0.lock().map_err(|e| e.to_string())?;
+    if let Some(session) = slot.as_ref().filter(|s| s.status == "running") {
+        return Ok(session.clone());
+    }
+    let session = ScanSession {
+        scan_id: format!(
+            "scan-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ),
+        path: path.clone(),
+        status: "running",
+        progress: None,
+        result: None,
+        error: None,
+        stats: None,
+    };
+    *slot = Some(session.clone());
+    drop(slot);
+    let scan_id = session.scan_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let worker_state = shared.clone();
+        let worker_id = scan_id.clone();
+        let started = std::time::Instant::now();
+        let outcome = tokio::task::spawn_blocking(move || {
+            let (mut node, stats) =
+                scan_with_stats(PathBuf::from(path), ScanOptions::default(), |p| {
+                    let event = ScanProgressEvent {
+                        scan_id: Some(worker_id.clone()),
+                        files_seen: p.files_seen,
+                        bytes_seen: p.bytes_seen,
+                        current_path: p.current_path.clone(),
+                    };
+                    if let Ok(mut slot) = worker_state.0.lock() {
+                        if let Some(s) = slot.as_mut().filter(|s| s.scan_id == worker_id) {
+                            s.progress = Some(event.clone());
+                        }
+                    }
+                    let _ = app.emit("scan-progress", event);
+                })
+                .map_err(|e| e.to_string())?;
+            let tagging = std::time::Instant::now();
+            tag_and_truncate(&mut node, &compiled, 0);
+            let event = ScanStatsEvent::from((
+                started.elapsed().as_millis() as u64,
+                tagging.elapsed().as_millis() as u64,
+                &stats,
+            ));
+            let _ = app.emit("scan-stats", &event);
+            Ok::<_, String>((node, event))
+        })
+        .await
+        .map_err(|e| format!("扫描任务异常：{e}"))
+        .and_then(|r| r);
+        if let Ok(mut slot) = shared.0.lock() {
+            if let Some(s) = slot.as_mut().filter(|s| s.scan_id == scan_id) {
+                match outcome {
+                    Ok((node, stats)) => {
+                        s.result = Some(Arc::new(node));
+                        s.stats = Some(stats);
+                        s.status = "completed";
+                    }
+                    Err(error) => {
+                        s.error = Some(error);
+                        s.status = "failed";
+                    }
+                }
+            }
+        }
+    });
+    Ok(session)
 }
 
 struct AppState {
@@ -54,6 +211,7 @@ async fn scan_path(
             let _ = app_for_progress.emit(
                 "scan-progress",
                 ScanProgressEvent {
+                    scan_id: None,
                     files_seen: progress.files_seen,
                     bytes_seen: progress.bytes_seen,
                     current_path: progress.current_path.clone(),
@@ -1291,6 +1449,22 @@ fn set_advisor(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Resolve and migrate before plugins read state or any WebView is created.
+    let portable = match portable_data::initialize() {
+        Ok(paths) => paths,
+        Err(message) => {
+            startup_error(&message);
+            std::process::exit(1);
+        }
+    };
+    let state_path = portable.root.join(".window-state.json");
+    let Some(state_filename) = state_path.to_str().map(str::to_owned) else {
+        startup_error("软件所在目录包含无法识别的字符，请将 Pinkbin 移到普通文件夹后重试。");
+        std::process::exit(1);
+    };
+    // WebView2 environment overrides would otherwise bypass the portable path.
+    // This only changes the new process, never the Windows/user environment.
+    std::env::remove_var("WEBVIEW2_USER_DATA_FOLDER");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -1299,16 +1473,54 @@ pub fn run() {
         .with_target(false)
         .init();
 
-    tauri::Builder::default()
+    let window_state_flags = tauri_plugin_window_state::StateFlags::SIZE
+        | tauri_plugin_window_state::StateFlags::POSITION
+        | tauri_plugin_window_state::StateFlags::MAXIMIZED;
+
+    let result = tauri::Builder::default()
+        .manage(portable)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_filename(state_filename)
+                .with_state_flags(window_state_flags)
+                .skip_initial_state("main")
+                .build(),
+        )
+        .on_page_load(move |webview, payload| {
+            use tauri_plugin_window_state::WindowExt;
+            if webview.label() != "main"
+                || !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+            {
+                return;
+            }
+            // 隐藏加载期间完成恢复，避免先显示默认尺寸再跳到保存的尺寸。
+            let window = webview.window();
+            tracing::debug!(
+                hidden = !window.is_visible().unwrap_or(true),
+                "startup: restore window"
+            );
+            if let Err(error) = window.restore_state(window_state_flags) {
+                tracing::warn!("窗口状态恢复失败，使用当前尺寸显示：{error}");
+            }
+            if let Err(error) = window.show() {
+                tracing::error!("显示主窗口失败：{error}");
+            }
+            tracing::debug!(
+                visible = window.is_visible().unwrap_or(false),
+                size = ?window.inner_size().ok(),
+                "startup: window ready"
+            );
+            let _ = window.set_focus();
+        })
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| PathBuf::from(".pinkbin"));
-            std::fs::create_dir_all(&data_dir).ok();
+            app.manage(advisor_http::AdvisorHttpState::default());
+            app.manage(cache_cleaner::CacheCleanerState::default());
+            app.manage(disk_cleaner::DiskCleanerState::default());
+            app.manage(ScanSessionState::default());
+            let data_dir = app_data_dir(app.handle());
             let undo_log = data_dir.join("undo.jsonl");
             let quarantine_root = data_dir.join("quarantine");
 
@@ -1321,10 +1533,36 @@ pub fn run() {
                 quarantine_root,
                 undo_log,
             });
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .cloned()
+                .ok_or_else(|| std::io::Error::other("主窗口配置缺失"))?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .data_directory(data_dir.join("WebView"))
+                .build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            advisor_http::advisor_http_request,
+            get_app_info,
+            cache_cleaner::preview_cache_cleanup,
+            cache_cleaner::start_cache_cleanup_scan,
+            cache_cleaner::get_cache_cleanup_scan,
+            cache_cleaner::execute_cache_cleanup,
+            disk_cleaner::list_cleanup_drives,
+            disk_cleaner::preview_disk_cleanup,
+            disk_cleaner::start_disk_cleanup_scan,
+            disk_cleaner::get_disk_cleanup_scan,
+            disk_cleaner::cancel_disk_cleanup_scan,
+            disk_cleaner::execute_disk_cleanup,
+            cleanup_history::list_cleanup_history,
             scan_path,
+            start_scan_session,
+            get_scan_session,
             estimate_size,
             list_scaffolds,
             detect_scaffold,
@@ -1342,8 +1580,11 @@ pub fn run() {
             fetch_workshop_titles,
             open_steam_url,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+    if let Err(error) = result {
+        startup_error(&format!("界面启动失败：{error}\n请确认 WebView2 已安装，且 PinkbinData 目录可写、未被其他程序占用。"));
+        std::process::exit(1);
+    }
 }
 
 fn load_all_scaffolds(handle: &AppHandle) -> Vec<Scaffold> {
@@ -1359,9 +1600,7 @@ fn load_all_scaffolds(handle: &AppHandle) -> Vec<Scaffold> {
     candidates.push(PathBuf::from("scaffolds"));
     candidates.push(PathBuf::from("../../scaffolds"));
     candidates.push(PathBuf::from("../../../scaffolds"));
-    if let Ok(p) = handle.path().app_data_dir() {
-        candidates.push(p.join("scaffolds"));
-    }
+    candidates.push(app_data_dir(handle).join("scaffolds"));
     for p in &candidates {
         if !p.exists() {
             continue;

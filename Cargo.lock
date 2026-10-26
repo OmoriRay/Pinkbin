@@ -2756,7 +2756,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pinkbin-advisor"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -2769,10 +2769,11 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-desktop"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs 5.0.1",
  "globset",
  "include_dir",
  "jwalk",
@@ -2789,16 +2790,20 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-shell",
+ "tauri-plugin-window-state",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "trash",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
  "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "pinkbin-executor"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2811,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scaffold"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "globset",
@@ -2824,7 +2829,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scaffold-lint"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "pinkbin-scaffold",
@@ -2833,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scanner"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "jwalk",
@@ -2848,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-steam-inspector"
-version = "0.1.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -4349,6 +4354,21 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "tauri-plugin-window-state"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73736611e14142408d15353e21e3cca2f12a3cfb523ad0ce85999b6d2ef1a704"
+dependencies = [
+ "bitflags 2.11.1",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

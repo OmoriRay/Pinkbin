@@ -474,14 +474,18 @@ mod tests {
     }
 
     fn tempdir_path() -> PathBuf {
+        // Windows 时钟可能让并行测试拿到相同时间戳，序号保证本进程内隔离。
+        static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "pinkbin-test-{}",
+            "pinkbin-test-{}-{}-{}",
+            std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(&p).unwrap();
+        std::fs::create_dir(&p).unwrap();
         p
     }
 }

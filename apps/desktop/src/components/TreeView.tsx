@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, ChevronDown, FolderOpen, Copy } from 'lucide-react';
 import type { Node } from '../types';
 import { formatBytes, formatCount } from '../format';
@@ -13,6 +13,27 @@ type Props = {
 
 export function TreeView({ root, selectedPath, onSelect }: Props) {
   const [ctx, setCtx] = useState<ContextMenuState | null>(null);
+  const [copyMessage, setCopyMessage] = useState('');
+  const copyTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+  const copyInfo = async (node: Node, pathOnly = false) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      const text = pathOnly ? node.path : [
+        `名称：${node.name || node.path}`,
+        `路径：${node.path}`,
+        `类型：${node.is_dir ? '文件夹' : '文件'}`,
+        `大小：${formatBytes(node.size)}（${node.size} 字节）`,
+        ...(node.is_dir ? [`文件数：${node.file_count.toLocaleString()}`] : []),
+      ].join('\n');
+      await navigator.clipboard.writeText(text);
+      setCopyMessage(pathOnly ? '路径已复制' : '文件信息已复制');
+    } catch {
+      setCopyMessage('复制失败，请检查剪贴板权限后重试');
+    }
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopyMessage(''), 4000);
+  };
 
   const openCtx = (e: React.MouseEvent, node: Node) => {
     e.preventDefault();
@@ -28,7 +49,12 @@ export function TreeView({ root, selectedPath, onSelect }: Props) {
         {
           label: '复制路径',
           icon: <Copy size={12} />,
-          onClick: () => { navigator.clipboard?.writeText(node.path).catch(() => { /* ignore */ }); },
+          onClick: () => { void copyInfo(node, true); },
+        },
+        {
+          label: '复制文件信息',
+          icon: <Copy size={12} />,
+          onClick: () => { void copyInfo(node); },
         },
       ],
     });
@@ -41,7 +67,9 @@ export function TreeView({ root, selectedPath, onSelect }: Props) {
         <div className="col-pct">父级 %</div>
         <div className="col-size">大小</div>
         <div className="col-count">项目</div>
+        <div className="col-copy" title="复制名称、路径与大小">复制</div>
       </div>
+      {copyMessage && <div className="tree-copy-message" role="status">{copyMessage}</div>}
       <div className="tree-body">
         <Row
           node={root}
@@ -50,6 +78,7 @@ export function TreeView({ root, selectedPath, onSelect }: Props) {
           selectedPath={selectedPath}
           onSelect={onSelect}
           onCtx={openCtx}
+          onCopy={copyInfo}
           initialOpen
         />
       </div>
@@ -110,6 +139,7 @@ function Row({
   selectedPath,
   onSelect,
   onCtx,
+  onCopy,
   initialOpen = false,
 }: {
   node: Node;
@@ -118,6 +148,7 @@ function Row({
   selectedPath: string | null;
   onSelect: (p: string) => void;
   onCtx: (e: React.MouseEvent, node: Node) => void;
+  onCopy: (node: Node) => Promise<void>;
   initialOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initialOpen);
@@ -160,6 +191,7 @@ function Row({
         </div>
         <div className="col-size">{formatBytes(node.size)}</div>
         <div className="col-count">{formatCount(node.file_count)}</div>
+        <button className="tree-copy-button" type="button" title={`复制 ${node.name || node.path} 的信息`} aria-label={`复制 ${node.name || node.path} 的信息`} draggable={false} onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); void onCopy(node); }} onContextMenu={(e) => e.stopPropagation()}><Copy size={12} /></button>
       </div>
       {open && hasKids && node.children.slice(0, 500).map((c) => (
         <Row
@@ -170,6 +202,7 @@ function Row({
           selectedPath={selectedPath}
           onSelect={onSelect}
           onCtx={onCtx}
+          onCopy={onCopy}
         />
       ))}
     </>
