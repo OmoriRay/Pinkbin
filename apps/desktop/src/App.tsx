@@ -135,7 +135,7 @@ export default function App() {
 
       <footer>
         <span className="app-version" title={appInfo.status === 'ready' ? `构建日期 ${appInfo.info.build_date}${isTauri ? '' : ' · 浏览器演示'}` : undefined}>
-          {appInfo.status === 'ready' ? `Pinkbin ${appInfo.info.edition} v${appInfo.info.version}` : `Pinkbin · ${appInfo.status === 'loading' ? '正在读取版本…' : '版本暂不可读取'}`}
+          {appInfo.status === 'ready' ? `Pinkbin v${appInfo.info.version}` : `Pinkbin · ${appInfo.status === 'loading' ? '正在读取版本…' : '版本暂不可读取'}`}
         </span>
         <span className="footer-path" title={root?.path}>{root?.path ?? '还没扫描'}</span>
       </footer>

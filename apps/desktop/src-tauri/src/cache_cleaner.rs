@@ -322,6 +322,8 @@ fn execute_recorded_snapshot(
     )
 }
 
+// Storage roots and injected I/O callbacks stay explicit at this boundary.
+#[allow(clippy::too_many_arguments)]
 fn execute_recorded_snapshot_with_roaming(
     snapshot: Snapshot,
     base: &Path,
@@ -478,7 +480,7 @@ fn directory_stamp(path: &Path) -> io::Result<Stamp> {
         if !m.is_dir() {
             return Err(io::Error::other("不是目录"));
         }
-        return Ok(Stamp {
+        Ok(Stamp {
             len: 0,
             modified: SystemTime::UNIX_EPOCH,
             created: m.created().ok(),
@@ -486,7 +488,7 @@ fn directory_stamp(path: &Path) -> io::Result<Stamp> {
                 info.dwVolumeSerialNumber as u64,
                 ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64,
             ),
-        });
+        })
     }
     #[cfg(not(windows))]
     {
@@ -1141,6 +1143,8 @@ fn execute_snapshot_with_logger(
     )
 }
 
+// Storage roots and injected I/O callbacks stay explicit at this boundary.
+#[allow(clippy::too_many_arguments)]
 fn execute_snapshot_with_logger_with_roaming(
     snapshot: Snapshot,
     current_base: &Path,
@@ -2689,7 +2693,7 @@ mod tests {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(events.len(), paths.len() * 2);
-        for event in events.chunks_exact(2) {
+        for event in events.as_chunks::<2>().0 {
             assert_eq!(event[0]["status"], "pending");
             assert_eq!(event[1]["status"], "success");
         }

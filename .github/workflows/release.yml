@@ -1,42 +1,58 @@
 name: Release
 
-# Windows-only for now. macOS / Linux 当前没有签名证书，也没在真实机器上验过；
-# 没法保证用户体面体验，就不提供二进制——想用的人自己 `pnpm tauri build`。
-# 等有签名 + 验证通道后再把矩阵加回来（git history 里有 4 平台版本可参考）。
-
 on:
-  # Existing portable releases are uploaded separately. Run installer builds
-  # only when explicitly requested, rather than on every imported version tag.
+  push:
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build, for example v0.4.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
-  build:
-    permissions:
-      contents: write
+  portable-zip:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-
-      - run: pnpm install --frozen-lockfile=false
-
-      - uses: tauri-apps/tauri-action@v0
+      - run: pnpm install --frozen-lockfile
+      - name: Check version tag
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: "Pinkbin ${{ github.ref_name }}"
-          releaseDraft: true
-          prerelease: false
-          args: --target x86_64-pc-windows-msvc
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne "v$version") { throw 'Tag and package version do not match' }
+      - run: pnpm tauri build --no-bundle
+      - name: Package portable ZIP
+        shell: pwsh
+        run: ./scripts/package-portable.ps1
+      - name: Publish ZIP only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $tag = $env:RELEASE_TAG
+          $zip = Get-ChildItem -LiteralPath release -Filter 'Pinkbin_*.zip' -File
+          if (@($zip).Count -ne 1) { throw 'Expected exactly one portable ZIP' }
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release already exists; refusing to replace published binaries' }
+          gh release create $tag $zip.FullName --repo $repo --verify-tag --title "Pinkbin $tag" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

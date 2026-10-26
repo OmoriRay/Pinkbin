@@ -1,12 +1,12 @@
-# Pinkbin — personal edition
+# Pinkbin
 
 A portable Windows disk analyzer with an AI conversation interface and rule-based cleanup. Based on [cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin), with upstream history and the original [MIT license](LICENSE) preserved.
 
 [中文说明](README.md) · [Download](https://github.com/OmoriRay/Pinkbin/releases/latest)
 
-Current version: **0.4.0**, Windows 10 / 11 x64. Download the executable from Releases and run it from a writable folder. WebView2 Runtime is required.
+Current version: **0.4.1**, Windows 10 / 11 x64. Download the ZIP from Releases, extract it into a writable folder, and run the executable inside it. Do not run it directly from the archive. WebView2 Runtime is required.
 
-This edition removes Studio, adds fixed-drive and known-cache checks, cleanup history, file information copying, scan reconnection after UI reload, pre-scan AI chat, response timing, a connection test and HTTP connection reuse.
+Pinkbin removes Studio, adds fixed-drive and known-cache checks, cleanup history, file information copying, scan reconnection after UI reload, pre-scan AI chat, response timing, a connection test and HTTP connection reuse.
 
 Settings and application data live in **PinkbinData beside the executable**. Move that folder together with the executable. It contains local AI configuration and must not be committed or shared.
 
@@ -24,3 +24,5 @@ cargo test --workspace
 ```
 
 The portable executable is generated at target/release/pinkbin.exe.
+
+Package the portable ZIP with `./scripts/package-portable.ps1`. GitHub Releases publishes ZIP packages only.

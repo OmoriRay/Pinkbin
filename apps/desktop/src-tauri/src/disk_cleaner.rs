@@ -1062,7 +1062,7 @@ pub async fn execute_disk_cleanup(
             c.parent
                 .chain()
                 .last()
-                .is_some_and(|root| root.path == PathBuf::from(&d.id))
+                .is_some_and(|root| root.path == Path::new(&d.id))
         })
     }) {
         return Err("磁盘列表已改变，请重新扫描".into());
@@ -1585,14 +1585,14 @@ mod tests {
         let state = DiskCleanerState::default();
         plan.created = SystemTime::now() - TTL - Duration::from_secs(1);
         state.0.lock().unwrap().snapshot = Some(plan);
-        assert!(take_snapshot(&state, &id, &[file.clone()]).is_err());
+        assert!(take_snapshot(&state, &id, std::slice::from_ref(&file)).is_err());
         let (plan, _) = scan(tmp.path());
         let id = plan.id.clone();
         state.0.lock().unwrap().snapshot = Some(plan);
-        assert!(take_snapshot(&state, "corrupt", &[file.clone()]).is_err());
+        assert!(take_snapshot(&state, "corrupt", std::slice::from_ref(&file)).is_err());
         assert!(take_snapshot(&state, &id, &["other-file".into()]).is_err());
         assert!(take_snapshot(&state, &id, &[file.clone(), file.clone()]).is_err());
-        assert!(take_snapshot(&state, &id, &[file.clone()]).is_ok());
+        assert!(take_snapshot(&state, &id, std::slice::from_ref(&file)).is_ok());
         assert!(take_snapshot(&state, &id, &[file]).is_err());
     }
     #[test]
@@ -1740,9 +1740,8 @@ mod tests {
         let ids: Vec<_> = plan.candidates.iter().map(|c| c.id.clone()).collect();
         let errors = RefCell::new(Vec::new());
         let outcome = execute_recorded(plan, &ids, logs.path(), |p| {
-            crate::recycle_only::recycle(p).map_err(|error| {
+            crate::recycle_only::recycle(p).inspect_err(|error| {
                 errors.borrow_mut().push(error.clone());
-                error
             })
         })
         .unwrap();

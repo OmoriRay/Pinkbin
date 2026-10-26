@@ -251,7 +251,7 @@ export function Settings({ onClose, appInfo }: Props) {
           <h2>关于 Pinkbin</h2>
           {appInfo.status === 'ready' ? (
             <dl>
-              <div><dt>版本</dt><dd>{appInfo.info.edition} v{appInfo.info.version}</dd></div>
+              <div><dt>版本</dt><dd>v{appInfo.info.version}</dd></div>
               <div><dt>构建日期</dt><dd>{appInfo.info.build_date}</dd></div>
             </dl>
           ) : <p className="muted small">{appInfo.status === 'loading' ? '正在读取版本信息…' : '版本暂不可读取，请重新启动后查看。'}</p>}

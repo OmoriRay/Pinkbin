@@ -23,7 +23,6 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(serde::Serialize)]
 struct AppInfo {
     version: &'static str,
-    edition: &'static str,
     build_date: &'static str,
 }
 
@@ -31,7 +30,6 @@ struct AppInfo {
 fn get_app_info() -> AppInfo {
     AppInfo {
         version: env!("CARGO_PKG_VERSION"),
-        edition: "自用版",
         build_date: env!("PINKBIN_BUILD_DATE"),
     }
 }

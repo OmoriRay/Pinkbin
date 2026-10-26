@@ -4,7 +4,7 @@
 
 # Pinkbin
 
-AI 对话式空间分析 + 传统规则清理，Windows 便携自用版。
+AI 对话式空间分析 + 传统规则清理，Windows 便携版。
 
 [下载便携版](https://github.com/OmoriRay/Pinkbin/releases/latest) · [使用说明](docs/使用说明.md) · [更新记录](docs/CHANGELOG.md) · [English](README_EN.md)
 
@@ -12,7 +12,7 @@ AI 对话式空间分析 + 传统规则清理，Windows 便携自用版。
 
 ## 这个版本做了什么
 
-基于 [cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin) 修改，保留原项目的粉色界面和 AI 对话式空间分析。当前版本 **v0.4.0**，面向 Windows 10 / 11 x64。
+基于 [cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin) 修改，保留原项目的粉色界面和 AI 对话式空间分析。当前版本 **v0.4.1**，面向 Windows 10 / 11 x64。
 
 - 移除右侧 Studio，保留文件树与 AI 对话作为主界面。
 - AI 无须扫描即可对话；扫描后可以结合文件元数据分析，支持兼容接口和本地 Ollama。
@@ -24,7 +24,7 @@ AI 对话式空间分析 + 传统规则清理，Windows 便携自用版。
 
 ## 下载和使用
 
-到 [Releases](https://github.com/OmoriRay/Pinkbin/releases/latest) 下载 `Pinkbin_0.4.0.exe`，放入一个有写入权限的文件夹，双击使用，无须安装包。Windows 需要 WebView2 Runtime；多数 Windows 10 / 11 设备已经具备。
+到 [Releases](https://github.com/OmoriRay/Pinkbin/releases/latest) 下载 `Pinkbin_0.4.1_windows_x64.zip`，完整解压到有写入权限的文件夹，再双击其中的程序使用，无须安装包。不要直接在压缩包内运行。Windows 需要 WebView2 Runtime；多数 Windows 10 / 11 设备已经具备。
 
 首次使用会在 exe 旁创建 `PinkbinData`。已有旧版 AppData 设置时会尝试导入，原数据保留。以后移动软件，请将 **exe 与 PinkbinData 一起移动**。数据目录含有本机 AI 配置，请不要上传到仓库或分享给其他人。
 
@@ -53,10 +53,10 @@ pnpm tauri dev
 pnpm tauri build --no-bundle
 ```
 
-产物位于 `target/release/pinkbin.exe`，可以自行重命名。测试使用 `cargo test --workspace`，前端构建检查使用 `pnpm build`。
+产物位于 `target/release/pinkbin.exe`。执行 `./scripts/package-portable.ps1` 生成用于发布的 ZIP；GitHub Releases 只发布 ZIP。测试使用 `cargo test --workspace`，前端构建检查使用 `pnpm build`。
 
 ## 来源与许可证
 
 原项目：[cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin)。本分支从提交 [`dc5585560f4e87a016853097573baa43699d4e3f`](https://github.com/cccyd2003-qwq/pinkbin/commit/dc5585560f4e87a016853097573baa43699d4e3f) 开始修改，并保留上游提交历史。
 
-沿用 [MIT License](LICENSE)，保留原作者版权与许可证。本仓库是个人修改分支。
+沿用 [MIT License](LICENSE)，保留原作者版权与许可证。本仓库是基于上游开发的公开分支。
