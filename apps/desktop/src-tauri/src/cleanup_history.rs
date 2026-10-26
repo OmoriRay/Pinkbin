@@ -28,14 +28,18 @@ pub struct HistoryRule {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct HistorySummary {
-    pub recycled_files: u64,
-    pub recycled_bytes: u64,
+    #[serde(alias = "recycled_files")]
+    pub deleted_files: u64,
+    #[serde(alias = "recycled_bytes")]
+    pub deleted_bytes: u64,
     pub skipped_files: u64,
     pub failed_files: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Begin {
+    #[serde(default)]
+    permanent_delete: bool,
     version: u32,
     id: String,
     plan_id: String,
@@ -63,14 +67,15 @@ pub struct CleanupHistory {
 
 #[derive(Debug, Serialize)]
 pub struct HistoryRecord {
+    pub permanent_delete: bool,
     pub id: String,
     pub plan_id: String,
     pub started_at: String,
     pub finished_at: Option<String>,
     pub selected_rules: Vec<HistoryRule>,
     pub status: String,
-    pub recycled_files: u64,
-    pub recycled_bytes: u64,
+    pub deleted_files: u64,
+    pub deleted_bytes: u64,
     pub skipped_files: u64,
     pub failed_files: u64,
     pub message: Option<String>,
@@ -269,6 +274,7 @@ pub fn start_record(
     let directory = root.join(&id);
     fs::create_dir(&directory).map_err(|_| "无法创建清理记录，未执行清理".to_string())?;
     let begin = Begin {
+        permanent_delete: true,
         version: VERSION,
         id,
         plan_id: plan_id.into(),
@@ -327,14 +333,15 @@ pub fn read_history(app_data: &Path) -> Result<CleanupHistory, String> {
             }
         };
         let mut record = HistoryRecord {
+            permanent_delete: begin.permanent_delete,
             id: begin.id,
             plan_id: begin.plan_id,
             started_at: begin.started_at,
             finished_at: None,
             selected_rules: begin.selected_rules,
             status: "incomplete".into(),
-            recycled_files: 0,
-            recycled_bytes: 0,
+            deleted_files: 0,
+            deleted_bytes: 0,
             skipped_files: 0,
             failed_files: 0,
             message: Some("这次清理尚未完成，实际清理量可能未记录。".into()),
@@ -348,7 +355,7 @@ pub fn read_history(app_data: &Path) -> Result<CleanupHistory, String> {
                 Ok(finish) => {
                     let summary = finish.summary;
                     let failed = finish.failed || summary.failed_files > 0;
-                    record.status = if failed && summary.recycled_files == 0 {
+                    record.status = if failed && summary.deleted_files == 0 {
                         "failed"
                     } else if failed || summary.skipped_files > 0 {
                         "partial"
@@ -364,8 +371,8 @@ pub fn read_history(app_data: &Path) -> Result<CleanupHistory, String> {
                         _ => None,
                     };
                     record.finished_at = Some(finish.finished_at);
-                    record.recycled_files = summary.recycled_files;
-                    record.recycled_bytes = summary.recycled_bytes;
+                    record.deleted_files = summary.deleted_files;
+                    record.deleted_bytes = summary.deleted_bytes;
                     record.skipped_files = summary.skipped_files;
                     record.failed_files = summary.failed_files;
                 }
@@ -389,6 +396,23 @@ pub async fn list_cleanup_history(app: tauri::AppHandle) -> Result<CleanupHistor
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_recycle_records_keep_their_original_method_and_counts() {
+        let begin: super::Begin = serde_json::from_value(serde_json::json!({
+            "version": 1, "id": "record-old", "plan_id": "old",
+            "started_at": "2026-10-25T00:00:00Z", "selected_rules": []
+        }))
+        .unwrap();
+        let summary: super::HistorySummary = serde_json::from_value(serde_json::json!({
+            "recycled_files": 3, "recycled_bytes": 2048,
+            "skipped_files": 1, "failed_files": 0
+        }))
+        .unwrap();
+        assert!(!begin.permanent_delete);
+        assert_eq!(summary.deleted_files, 3);
+        assert_eq!(summary.deleted_bytes, 2048);
+        assert_eq!(summary.skipped_files, 1);
+    }
     use super::*;
     fn rules() -> Vec<HistoryRule> {
         vec![HistoryRule {
@@ -406,8 +430,8 @@ mod tests {
         finish_record(
             &token,
             HistorySummary {
-                recycled_files: 2,
-                recycled_bytes: 42,
+                deleted_files: 2,
+                deleted_bytes: 42,
                 ..Default::default()
             },
             None,
@@ -415,7 +439,7 @@ mod tests {
         .unwrap();
         let records = read_history(temp.path()).unwrap();
         assert_eq!(records.records[0].status, "completed");
-        assert_eq!(records.records[0].recycled_bytes, 42);
+        assert_eq!(records.records[0].deleted_bytes, 42);
         assert!(records.records[0].finished_at.is_some());
         assert!(finish_record(&token, HistorySummary::default(), None).is_err());
     }
@@ -433,7 +457,7 @@ mod tests {
             finish_record(
                 &token,
                 HistorySummary {
-                    recycled_files: files,
+                    deleted_files: files,
                     skipped_files: skips,
                     failed_files: failures,
                     ..Default::default()

@@ -236,13 +236,17 @@ export function ChatPanel() {
     setPendingDrops((prev) => (prev.find((p) => p.path === path) ? prev : [...prev, { path, name }]));
   };
 
-  const recycleNode = async (target: Node, reason: string) => {
+  const deletingPaths = useRef(new Set<string>());
+  const deleteNode = async (target: Node, reason: string) => {
+    if (deletingPaths.current.has(target.path)) return;
+    deletingPaths.current.add(target.path);
     try {
-      await api.execute({ action: 'recycle', paths: [target.path], reason }, false);
+      await api.execute({ action: 'delete', paths: [target.path], reason }, false);
       addReclaimed(target.size);
-      pushTurn({ id: uid(), role: 'system', text: `已回收 ${target.path} · 释放 ${formatBytes(target.size)}` });
+      pushTurn({ id: uid(), role: 'system', text: `已直接删除 ${target.path} · 文件大小 ${formatBytes(target.size)}` });
     } catch (e) {
-      pushTurn({ id: uid(), role: 'system', text: `回收失败：${String(e)}` });
+      deletingPaths.current.delete(target.path);
+      pushTurn({ id: uid(), role: 'system', text: `删除失败：${String(e)}` });
     }
   };
 
@@ -296,10 +300,10 @@ export function ChatPanel() {
                 : t.text}
             </div>
             {t.role === 'assistant' && <ReplyTiming turn={t} />}
-            {t.role === 'assistant' && t.advice?.action === 'recycle' && !t.advice?.needs_inspection && node && (
+            {t.role === 'assistant' && t.advice?.safe_to_delete && t.advice.risk === 'low' && ['recycle', 'delete'].includes(t.advice.action) && !t.advice.needs_inspection && node && (
               <div className="chat-actions">
-                <button className="primary" onClick={() => recycleNode(node, t.advice?.reasoning ?? 'AI suggested')}>
-                  <Trash2 size={13} /> 回收 {formatBytes(node.size)}
+                <button className="primary" onClick={() => deleteNode(node, t.advice?.reasoning ?? 'AI suggested')}>
+                  <Trash2 size={13} /> 直接删除 {formatBytes(node.size)}
                 </button>
               </div>
             )}

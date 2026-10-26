@@ -28,8 +28,8 @@ export interface CacheScanSession {
 }
 
 export interface CacheResult {
-  recycled_files: number;
-  recycled_bytes: number;
+  deleted_files: number;
+  deleted_bytes: number;
   skipped_files: number;
   failed_files: number;
   messages: string[];
@@ -38,14 +38,15 @@ export interface CacheResult {
 }
 
 export interface CleanupHistoryRecord {
+  permanent_delete: boolean;
   id: string;
   plan_id: string;
   started_at: string;
   finished_at: string | null;
   selected_rules: { id: string; title: string }[];
   status: 'completed' | 'partial' | 'failed' | 'incomplete';
-  recycled_files: number;
-  recycled_bytes: number;
+  deleted_files: number;
+  deleted_bytes: number;
   skipped_files: number;
   failed_files: number;
   message: string | null;
@@ -72,8 +73,8 @@ const demoElectronRules: CacheRule[] = [
     ? '应用关闭后清理默认网页、代码和 GPU 缓存，不涉及歌单或下载目录'
     : '应用关闭后清理默认目录中的网页、代码和 GPU 缓存，不涉及聊天或账号数据',
   consequence: id === 'lx-music-cache'
-    ? '移入回收站；页面与音频缓存可能需要重新下载，首次打开可能稍慢'
-    : '移入回收站；应用可能重新生成缓存，首次打开可能稍慢',
+    ? '直接删除；页面与音频缓存可能需要重新下载，首次打开可能稍慢'
+    : '直接删除；应用可能重新生成缓存，首次打开可能稍慢',
   retention_days: 0,
   file_count: 12 + index,
   bytes: (20 + index * 5) * 1024 * 1024,
@@ -152,15 +153,15 @@ export async function executeCacheCleanup(planId: string, ruleIds: string[]): Pr
   demoPlan = null; saveDemoSession(null);
   await delay();
   const result = {
-    recycled_files: selected.reduce((sum, rule) => sum + rule.file_count, 0),
-    recycled_bytes: selected.reduce((sum, rule) => sum + rule.bytes, 0),
+    deleted_files: selected.reduce((sum, rule) => sum + rule.file_count, 0),
+    deleted_bytes: selected.reduce((sum, rule) => sum + rule.bytes, 0),
     skipped_files: 0, failed_files: 0,
-    messages: ['DEMO：仅模拟移入回收站，没有读取或更改本机文件。'],
+    messages: ['DEMO：仅模拟直接删除，没有读取或更改本机文件。'],
     log_path: '',
   };
   selected.forEach((rule) => demoRecycled.add(rule.id));
   const now = new Date().toISOString();
-  demoHistory.unshift({ id: `history-${Date.now()}`, plan_id: planId, started_at: now, finished_at: now, selected_rules: selected.map(({ id, title }) => ({ id, title })), status: 'completed', recycled_files: result.recycled_files, recycled_bytes: result.recycled_bytes, skipped_files: 0, failed_files: 0, message: '浏览器演示记录，仅在当前页面中保留。' });
+  demoHistory.unshift({ permanent_delete: true, id: `history-${Date.now()}`, plan_id: planId, started_at: now, finished_at: now, selected_rules: selected.map(({ id, title }) => ({ id, title })), status: 'completed', deleted_files: result.deleted_files, deleted_bytes: result.deleted_bytes, skipped_files: 0, failed_files: 0, message: '浏览器演示记录，仅在当前页面中保留。' });
   demoPlan = null;
   return result;
 }

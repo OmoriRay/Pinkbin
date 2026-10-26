@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Copy, HardDrive, LoaderCircle, ShieldCheck, Trash2 } from 'lucide-react';
+import { Copy, HardDrive, LoaderCircle, ShieldCheck, Trash2 } from 'lucide-react';
 import { cancelDiskCleanupScan, executeDiskCleanup, getDiskCleanupScan, listCleanupDrives, onDiskProgress, startDiskCleanupScan, type CleanupDrive, type DiskEntry, type DiskGroup, type DiskPlan, type DiskProgress, type DiskScanSession } from '../diskCleanerApi';
 import type { CacheResult } from '../cacheCleanerApi';
 import { formatBytes } from '../format';
 import './diskCleaner.css';
-type Stage = 'initial' | 'scanning' | 'preview' | 'confirm' | 'executing' | 'error';
+type Stage = 'initial' | 'scanning' | 'preview' | 'executing' | 'error';
 interface Props { active: boolean; onBusy: (busy: boolean, executing: boolean) => void; registerCancel: (cancel: (() => void) | null) => void; onComplete: (result: CacheResult) => void }
 function fileDate(value: string | number | null) { if (value == null) return '日期未知'; const date = new Date(typeof value === 'number' ? value * 1000 : value); return Number.isNaN(date.getTime()) ? '日期未知' : date.toLocaleDateString('zh-CN'); }
 export function DiskCleaner({ active, onBusy, registerCancel, onComplete }: Props) {
@@ -95,7 +95,7 @@ export function DiskCleaner({ active, onBusy, registerCancel, onComplete }: Prop
   };
   const cancel = async () => { if(!scanId.current || cancelling) return; cancelRequested.current = true; setCancelling(true); try { await cancelDiskCleanupScan(scanId.current); } catch(err) { if(alive.current) { setError(String(err)); setCancelling(false); } } };
   const execute = async () => {
-    if(operation.current || stage !== 'confirm' || !plan || !chosen.length || chosen.length > 10000) return;
+    if(operation.current || stage !== 'preview' || !plan || !chosen.length || chosen.length > 10000) return;
     operation.current = true; setStage('executing'); onBusy(true, true);
     generation.current++; ignoredSession.current = scanId.current; shouldPoll.current = false;
     try { const result = await executeDiskCleanup(plan.plan_id, chosen.map(entry => entry.id)); if(alive.current) { setPlan(null); setSelected(new Set()); setStage('initial'); onBusy(false, false); onComplete(result); } }
@@ -136,21 +136,24 @@ export function DiskCleaner({ active, onBusy, registerCancel, onComplete }: Prop
         <div className="dc-drive-heading"><strong>检查哪些磁盘？</strong><span>已选 {driveIds.size} 个</span></div>
         <div className="dc-drives">{drives.map(drive => <label className={`dc-drive${driveIds.has(drive.id) ? ' dc-drive-selected' : ''}`} key={drive.id}><input type="checkbox" aria-label={drive.label} checked={driveIds.has(drive.id)} disabled={busy} onChange={() => setDriveIds(current => {const next = new Set(current); if(next.has(drive.id)) next.delete(drive.id); else next.add(drive.id); return next;})}/><HardDrive size={22}/><span><strong>{drive.label}</strong><small>可用 {formatBytes(drive.available_bytes)} / 共 {formatBytes(drive.total_bytes)}</small></span></label>)}</div>
         {driveLoading && <p role="status" className="cc-hint">正在读取本地磁盘…</p>}{!driveLoading && !drives.length && <p className="cc-check-notice">暂未找到可检查的本地磁盘，请关闭面板后重试。</p>}
-        {stage === 'scanning' ? <div className="dc-progress" role="status"><LoaderCircle className="cc-spin" size={22}/><div><strong>{cancelling ? '正在停止检查…' : `正在检查 ${progress?.drive_id || [...driveIds][0]}`}</strong><p>已查看 {(progress?.scanned_files ?? 0).toLocaleString()} 个文件 · {formatBytes(progress?.scanned_bytes ?? 0)}</p><small>文件较多时需要一些时间，可以随时取消。</small></div></div> : <div className="dc-pledge"><ShieldCheck size={17}/><span>文件留在本机 · 全部由你选择 · 移入回收站可恢复</span></div>}
+        {stage === 'scanning' ? <div className="dc-progress" role="status"><LoaderCircle className="cc-spin" size={22}/><div><strong>{cancelling ? '正在停止检查…' : `正在检查 ${progress?.drive_id || [...driveIds][0]}`}</strong><p>已查看 {(progress?.scanned_files ?? 0).toLocaleString()} 个文件 · {formatBytes(progress?.scanned_bytes ?? 0)}</p><small>文件较多时需要一些时间，可以随时取消。</small></div></div> : <div className="dc-pledge"><ShieldCheck size={17}/><span>文件留在本机 · 全部由你选择 · 直接删除 · 无法从回收站恢复</span></div>}
         {notice && <p className="cc-check-notice" role="status">{notice}</p>}
       </>}
       {plan && <>
         {chosen.length > 10000 && <p className="cc-check-notice" role="alert">一次最多清理 10,000 个文件，请减少选择后分次处理。</p>}
-        <div className="dc-summary"><div><span>找到待检查文件</span><strong>{formatBytes(plan.groups.reduce((sum,group) => sum + group.bytes,0))}</strong></div><p>这些文件<b>不一定是垃圾</b>。<br/>所有文件默认不选，请根据名称和位置决定是否保留。</p></div>
+        <div className="dc-summary"><div><span>找到待检查文件</span><strong>{formatBytes(plan.groups.reduce((sum,group) => sum + group.bytes,0))}</strong></div><p>这些文件<b>不一定是垃圾</b>。<br/>所有文件默认不选。选中后可直接删除，无法从回收站恢复。</p></div>
         <p className="cc-hint">已查看 {plan.stats.scanned_files.toLocaleString()} 个文件 · {formatBytes(plan.stats.scanned_bytes)}。{plan.stats.limited ? '文件较多，当前仅展示部分候选；清理后可再次检查。' : ''}{plan.stats.denied_directories > 0 ? '部分位置无法访问，已跳过。' : ''}</p>
-        {(stage === 'confirm' || stage === 'executing') && <div className="cc-confirm" role="status"><Trash2 size={22}/><div><strong>{stage === 'executing' ? '正在移入回收站，请保持窗口打开…' : `确认将 ${chosen.length} 个文件移入回收站？`}</strong><p>共 {formatBytes(bytes)}。回收站内仍占空间，需要时可恢复。</p><p>其中{chosen.some(entry => entry.category === 'large') ? '包含大文件，可能是个人资料；' : ''}{chosen.some(entry => entry.category === 'installers') ? '包含安装包；' : ''}全部需要你确认不再使用。旧日志和故障记录可能用于排查问题。</p></div></div>}
+        {stage === 'executing' && <div className="cc-confirm" role="status"><Trash2 size={22}/><div><strong>正在直接删除，请保持窗口打开…</strong><p>共 {formatBytes(bytes)}。删除后无法从回收站恢复。</p></div></div>}
         {(stage === 'preview' ? plan.groups : plan.groups.map(group => ({...group, entries: group.entries.filter(entry => selected.has(entry.id)), file_count: group.entries.filter(entry => selected.has(entry.id)).length, bytes: group.entries.filter(entry => selected.has(entry.id)).reduce((sum,entry) => sum+entry.size,0)})).filter(group => group.entries.length)).map(renderGroup)}
         <details className="cc-diagnostics"><summary>查看检查说明</summary><p>跳过无法访问的位置 {plan.stats.denied_directories} 处，保护的位置 {plan.stats.protected_directories} 处。{plan.stats.limited ? '当前候选展示已达到上限。' : ''}</p>{plan.warnings.map((warning,index) => <p key={index}>{warning}</p>)}</details>
       </>}
       {error && <div className="cc-check-notice" role="alert"><p>本次操作未能完成，请重新检查后再试。</p><details className="cc-diagnostics"><summary>查看原因</summary><p>{error}</p></details></div>}
     </div>
     <div className="cc-footer"><div className="cc-selection"><span>{plan ? `已选 ${chosen.length} 个文件` : '检查不会删除文件'}</span>{plan && <strong>{formatBytes(bytes)}</strong>}</div><div className="cc-actions">
-      {stage === 'scanning' ? <button className="cc-button" disabled={cancelling} onClick={() => void cancel()}>{cancelling ? '正在取消…' : '取消检查'}</button> : stage === 'executing' ? <button className="cc-button cc-primary" disabled><LoaderCircle className="cc-spin" size={15}/>清理中…</button> : stage === 'confirm' ? <><button className="cc-button" onClick={() => {setPages({}); setStage('preview');}}>返回选择</button><button className="cc-button cc-primary" onClick={() => void execute()}><Trash2 size={15}/>确认移入回收站</button></> : stage === 'preview' ? <><button className="cc-text" disabled={!selected.size} onClick={() => setSelected(new Set())}>清空选择</button><button className="cc-button" onClick={changeDrives}><HardDrive size={14}/>更换磁盘</button><button className="cc-button cc-primary" disabled={!chosen.length || chosen.length > 10000} onClick={() => {setPages({}); setOpen(new Set(plan?.groups.map(group => group.id))); setStage('confirm');}}>下一步<ArrowRight size={15}/></button></> : <button className="cc-button cc-primary" disabled={driveLoading || !driveIds.size} onClick={() => void scan()}><HardDrive size={15}/>开始全盘检查</button>}
+      {stage === 'scanning' ? <button className="cc-button" disabled={cancelling} onClick={() => void cancel()}>{cancelling ? '正在取消…' : '取消检查'}</button>
+        : stage === 'executing' ? <button className="cc-button cc-primary" disabled><LoaderCircle className="cc-spin" size={15}/>删除中…</button>
+        : stage === 'preview' ? <><button className="cc-text" disabled={!selected.size} onClick={() => setSelected(new Set())}>清空选择</button><button className="cc-button" onClick={changeDrives}><HardDrive size={14}/>更换磁盘</button><button className="cc-button cc-primary" disabled={!chosen.length || chosen.length > 10000} onClick={() => void execute()} title="直接删除所选文件，不进入回收站"><Trash2 size={15}/>直接删除</button></>
+        : <button className="cc-button cc-primary" disabled={driveLoading || !driveIds.size} onClick={() => void scan()}><HardDrive size={15}/>开始全盘检查</button>}
     </div></div>
   </div>;
 }

@@ -9,7 +9,7 @@ Windows 10 / 11 x64 便携程序。
 5. Windows 需要 WebView2 Runtime。多数 Windows 10 / 11 设备已具备。
 
 AI 功能需要自行填写服务地址、密钥与模型。数据目录包含个人配置，请勿分享。
-大文件或旧文件不等于垃圾，清理前请核对用途。移入回收站不等于已释放空间。
+大文件或旧文件不等于垃圾，清理前请核对用途。点击“直接删除”立即永久删除所选文件，不经过回收站，也不再弹出二次确认页。删除后无法从回收站恢复。
 
 项目与下载：https://github.com/OmoriRay/Pinkbin
 基于 cccyd2003-qwq/pinkbin 修改，沿用 MIT License；许可证见 LICENSE.txt。

@@ -12,7 +12,7 @@ AI 对话式空间分析 + 传统规则清理，Windows 便携版。
 
 ## 这个版本做了什么
 
-基于 [cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin) 修改，保留原项目的粉色界面和 AI 对话式空间分析。当前版本 **v0.4.1**，面向 Windows 10 / 11 x64。
+基于 [cccyd2003-qwq/pinkbin](https://github.com/cccyd2003-qwq/pinkbin) 修改，保留原项目的粉色界面和 AI 对话式空间分析。当前版本 **v0.4.2**，面向 Windows 10 / 11 x64。
 
 - 移除右侧 Studio，保留文件树与 AI 对话作为主界面。
 - AI 无须扫描即可对话；扫描后可以结合文件元数据分析，支持兼容接口和本地 Ollama。
@@ -24,7 +24,7 @@ AI 对话式空间分析 + 传统规则清理，Windows 便携版。
 
 ## 下载和使用
 
-到 [Releases](https://github.com/OmoriRay/Pinkbin/releases/latest) 下载 `Pinkbin_0.4.1_windows_x64.zip`，完整解压到有写入权限的文件夹，再双击其中的程序使用，无须安装包。不要直接在压缩包内运行。Windows 需要 WebView2 Runtime；多数 Windows 10 / 11 设备已经具备。
+到 [Releases](https://github.com/OmoriRay/Pinkbin/releases/latest) 下载 `Pinkbin_0.4.2_windows_x64.zip`，完整解压到有写入权限的文件夹，再双击其中的程序使用，无须安装包。不要直接在压缩包内运行。Windows 需要 WebView2 Runtime；多数 Windows 10 / 11 设备已经具备。
 
 首次使用会在 exe 旁创建 `PinkbinData`。已有旧版 AppData 设置时会尝试导入，原数据保留。以后移动软件，请将 **exe 与 PinkbinData 一起移动**。数据目录含有本机 AI 配置，请不要上传到仓库或分享给其他人。
 
@@ -34,7 +34,7 @@ AI 对话式空间分析 + 传统规则清理，Windows 便携版。
 
 全盘检查遍历所选的可访问固定本地盘，列出较旧临时文件、崩溃转储、日志、安装介质和大文件。它会跳过受保护目录、链接及部分软件环境；权限或扫描限额会影响覆盖范围。
 
-**大文件、旧文件不等于垃圾。** 全盘候选默认不选，需要人工核对后确认。规则清理不依赖 AI；执行移入系统回收站，不自动清空回收站，因此移入量不等于已经释放的空间。
+**大文件、旧文件不等于垃圾。** 全盘候选默认不选，需要人工核对后勾选。点击“直接删除”立即执行，不再进入确认页。清理不依赖 AI，直接删除所选文件，不经过回收站，无法从回收站恢复。
 
 普通文件分析发送路径、大小等元数据，不读取文件正文；主动附加的图片会发送给所配置的 AI 服务。对话本身不能直接执行清理。
 

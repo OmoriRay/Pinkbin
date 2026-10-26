@@ -97,8 +97,8 @@ export async function executeDiskCleanup(planId: string, fileIds: string[]): Pro
   await wait(650);
   const entries = current.groups.flatMap(group => group.entries).filter(entry => fileIds.includes(entry.id));
   entries.forEach(entry => recycled.add(entry.id));
-  const result: CacheResult = { recycled_files: entries.length, recycled_bytes: entries.reduce((sum, entry) => sum + entry.size, 0), skipped_files: 0, failed_files: 0, messages: ['DEMO：仅模拟移入回收站，没有读取或更改本机文件。'], log_path: '' };
+  const result: CacheResult = { deleted_files: entries.length, deleted_bytes: entries.reduce((sum, entry) => sum + entry.size, 0), skipped_files: 0, failed_files: 0, messages: ['DEMO：仅模拟直接删除，没有读取或更改本机文件。'], log_path: '' };
   const now = new Date().toISOString();
-  addDemoCleanupHistory({ id: `disk-history-${Date.now()}`, plan_id: planId, started_at: now, finished_at: now, selected_rules: current.groups.filter(group => group.entries.some(entry => fileIds.includes(entry.id))).map(({id,title}) => ({id,title})), status: 'completed', ...result, message: '全盘检查 · 浏览器演示记录，仅在当前页面中保留。' });
+  addDemoCleanupHistory({ permanent_delete: true, id: `disk-history-${Date.now()}`, plan_id: planId, started_at: now, finished_at: now, selected_rules: current.groups.filter(group => group.entries.some(entry => fileIds.includes(entry.id))).map(({id,title}) => ({id,title})), status: 'completed', ...result, message: '全盘检查 · 浏览器演示记录，仅在当前页面中保留。' });
   return result;
 }

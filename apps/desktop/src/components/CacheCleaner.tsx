@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowRight, Brush, Check, CheckCircle2, ChevronRight, Chrome, FileWarning, FolderClock, HardDrive, LoaderCircle, RotateCcw, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Brush, Check, CheckCircle2, ChevronRight, Chrome, FileWarning, FolderClock, HardDrive, LoaderCircle, RotateCcw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { executeCacheCleanup, getCacheCleanupScan, listCleanupHistory, startCacheCleanupScan, type CachePlan, type CacheResult, type CacheRule, type CacheScanSession, type CleanupHistory } from '../cacheCleanerApi';
 import { formatBytes } from '../format';
 import { isTauri } from '../env';
@@ -8,7 +8,7 @@ import { getDiskCleanupScan, type DiskScanSession } from '../diskCleanerApi';
 import './cacheCleaner.css';
 import { DiskCleaner } from './DiskCleaner';
 
-type Stage = 'initial' | 'scanning' | 'preview' | 'confirm' | 'executing' | 'complete' | 'error';
+type Stage = 'initial' | 'scanning' | 'preview' | 'executing' | 'complete' | 'error';
 const ruleIcons = { temp: FolderClock, chrome: Chrome, edge: HardDrive, brave: Chrome, firefox: Chrome, 'pip-cache': HardDrive, 'crash-dumps': FileWarning };
 const isActionable = (message: string) => /请.{0,12}(关闭|退出|重试|重新扫描)|先关闭/.test(message);
 
@@ -17,7 +17,7 @@ function impact(rule: CacheRule) {
   if (rule.id === 'pip-cache') return '以后安装 Python 软件包可能需重新下载或构建，离线安装也可能受影响。';
   if (rule.id === 'temp') return '应用留下的旧临时文件，正在使用的文件会跳过。';
   if (/chrome|edge|brave|vivaldi|opera|firefox|browser/.test(rule.id)) return '网页首次打开可能稍慢，之后会重新缓存。';
-  return rule.consequence.replace(/^移入回收站[；，]?/, '');
+  return rule.consequence.replace(/^直接删除[；，]?/, '');
 }
 
 export function CacheCleaner({ onClose }: { onClose: () => void }) {
@@ -205,7 +205,7 @@ export function CacheCleaner({ onClose }: { onClose: () => void }) {
   };
 
   const execute = async () => {
-    if (operation.current || stage !== 'confirm' || !plan || !selectedRules.length) return;
+    if (operation.current || stage !== 'preview' || !plan || !selectedRules.length) return;
     operation.current = true;
     request.current++; shouldPoll.current = false; ignoredSession.current = cacheScanId.current;
     executingRef.current = true;
@@ -247,12 +247,12 @@ export function CacheCleaner({ onClose }: { onClose: () => void }) {
             <h3>{stage === 'scanning' ? '正在本机查找可清理文件…' : '先看看，再决定清理什么'}</h3>
             <p>检查浏览器、常用软件和系统留下的缓存。<br />先看看能清理多少，扫描不会删除文件。</p>
             <div className="cc-category-tags"><span>浏览器缓存</span><span>软件缓存</span><span>临时文件</span><span>旧故障记录</span></div>
-            <div className="cc-pledge"><ShieldCheck size={16} /> 本机检查 <span>·</span> 自己选择 <span>·</span> 移入回收站</div>
+            <div className="cc-pledge"><ShieldCheck size={16} /> 本机检查 <span>·</span> 自己选择 <span>·</span> 直接删除</div>
           </div>}
-          {(stage === 'preview' || stage === 'confirm' || stage === 'executing') && plan && <>
-            <div className="cc-overview"><div><span>本次已选</span><strong>{formatBytes(totalBytes)}</strong></div><p>{selectedRules.length ? `${selectedRules.length} 个清理项目` : '还没有选择清理项目'}<br /><span>移入回收站后仍占空间，可在需要时恢复。</span></p></div>
+          {(stage === 'preview' || stage === 'executing') && plan && <>
+            <div className="cc-overview"><div><span>本次已选</span><strong>{formatBytes(totalBytes)}</strong></div><p>{selectedRules.length ? `${selectedRules.length} 个清理项目` : '还没有选择清理项目'}<br /><span>删除后无法从回收站恢复。</span></p></div>
             {(incomplete || actionHints.length > 0) && <div className="cc-check-notice" role="status">{incomplete && <p>部分位置未能检查，下方只列出已找到的文件。</p>}{actionHints.length > 0 && <p>{actionHints.join('；')}</p>}</div>}
-            <div className="cc-list-heading"><span>{stage === 'preview' ? '选择要清理的项目' : '本次清理清单'}</span><span className="cc-safe">{stage === 'preview' ? '不想清理的项目可以取消勾选' : '将移入回收站'}</span></div>
+            <div className="cc-list-heading"><span>{stage === 'preview' ? '选择要清理的项目' : '本次清理清单'}</span><span className="cc-safe">{stage === 'preview' ? '不想清理的项目可以取消勾选' : '将直接删除'}</span></div>
             {stage === 'preview' && availableRules.length > 0 && <p className="cc-hint">清理前请关闭相关软件，正在使用的文件会跳过。</p>}
             <div className="cc-rules">{(stage === 'preview' ? availableRules : selectedRules).map((rule) => <RuleRow key={rule.id} rule={rule} checked={selected.has(rule.id)} disabled={stage !== 'preview'} onChange={() => toggle(rule.id)} />)}</div>
             {stage === 'preview' && closableRules.length > 0 && <section className="cc-blocked"><div className="cc-list-heading"><span>关闭软件后可清理</span><strong>{formatBytes(blockedBytes)}</strong></div><p>已发现这些缓存，但软件仍在运行。关闭后重新扫描，再决定是否清理。</p>{closableRules.map((rule) => <div className="cc-blocked-rule" key={rule.id}><span>{rule.title}</span><strong>{formatBytes(rule.bytes)}</strong></div>)}</section>}
@@ -260,7 +260,7 @@ export function CacheCleaner({ onClose }: { onClose: () => void }) {
             {stage === 'preview' && availableRules.length === 0 && blockedRules.length === 0 && <div className="cc-nothing"><CheckCircle2 size={26} /><strong>暂时没有找到需要清理的文件</strong><p>{incomplete ? '部分位置未能检查，可以稍后重新扫描。' : '以后使用一段时间，再来检查就好。'}</p></div>}
             {stage === 'preview' && otherRules.length > 0 && <details className="cc-other"><summary><ChevronRight size={13} />其他 {otherRules.length} 个检查项目</summary><div>{otherRules.map((rule) => <p key={rule.id}><span>{rule.title}</span><span>{rule.status === 'blocked' ? '暂时无法检查' : '暂无可清理文件'}</span></p>)}</div></details>}
             <details className="cc-diagnostics"><summary>查看检查详情</summary><p className="cc-hint">以下是检查说明和文件位置，无需了解这些信息也可以清理。</p>{plan.warnings.map((warning, i) => <p className="cc-technical" key={i}>{warning}</p>)}{plan.rules.map((rule) => <div className="cc-diagnostic-rule" key={rule.id}><strong>{rule.title}</strong><p>{rule.description}{rule.retention_days > 0 ? `；保留最近 ${rule.retention_days} 天的文件。` : ''}</p>{rule.message && <p>{rule.message}</p>}{rule.samples.length > 0 && <ul>{rule.samples.map((path, i) => <li key={i}>{path}</li>)}</ul>}</div>)}</details>
-            {(stage === 'confirm' || stage === 'executing') && <div className="cc-confirm" role="status"><Trash2 size={21} /><div><strong>{executing ? '正在移入回收站，请稍候…' : `确认将 ${totalFiles.toLocaleString()} 个文件移入回收站？`}</strong><p>{executing ? '执行期间请保持窗口打开，完成后会显示实际结果。' : `已选 ${selectedRules.length} 项，共 ${formatBytes(totalBytes)}。文件可从系统回收站恢复；回收站中仍占空间。`}</p></div></div>}
+            {stage === 'executing' && <div className="cc-confirm" role="status"><Trash2 size={21} /><div><strong>正在直接删除，请稍候…</strong><p>执行期间请保持窗口打开，完成后显示实际结果。</p></div></div>}
           </>}
           {stage === 'error' && <div className="cc-intro cc-error"><FileWarning size={38} /><h3>本次操作未能完成</h3>{error.includes('本次未执行清理') ? <p className="cc-check-notice" role="alert">未能保存清理记录，本次未执行清理，请重新扫描。</p> : <p>请重新扫描后再试一次，也可以展开查看具体原因。</p>}<details className="cc-diagnostics"><summary>查看错误详情</summary><pre>{error}</pre></details></div>}
 
@@ -268,10 +268,9 @@ export function CacheCleaner({ onClose }: { onClose: () => void }) {
         </div>
         <div className="cc-footer">
           {view === 'history' ? <><div className="cc-selection"><span>最多保留最近 100 次记录</span></div><div className="cc-actions"><button className="cc-button" disabled={historyLoading} onClick={showHistory}><RotateCcw size={14} />刷新记录</button>{result ? <><button className="cc-button" onClick={() => setView('disk')}><RotateCcw size={14} />再次检查</button><button className="cc-button cc-primary" onClick={close}><Check size={15} />完成</button></> : <button className="cc-button cc-primary" onClick={() => setView('disk')}>返回清理</button>}</div></> : <>
-          <div className="cc-selection">{stage === 'preview' || stage === 'confirm' || stage === 'executing' ? <><span>已选 <b>{selectedRules.length}</b> 项 · {totalFiles.toLocaleString()} 个文件</span><strong>{formatBytes(totalBytes)}</strong></> : <span><ShieldCheck size={14} /> 所有操作都在本机完成</span>}</div>
+          <div className="cc-selection">{stage === 'preview' || stage === 'executing' ? <><span>已选 <b>{selectedRules.length}</b> 项 · {totalFiles.toLocaleString()} 个文件</span><strong>{formatBytes(totalBytes)}</strong></> : <span><ShieldCheck size={14} /> 所有操作都在本机完成</span>}</div>
           <div className="cc-actions">
-            {stage === 'preview' && <><button className="cc-text" disabled={!selected.size} onClick={() => setSelected(new Set())}>清空选择</button><button className="cc-button" onClick={scan}><RotateCcw size={14} />重新扫描</button><button className="cc-button cc-primary" disabled={!totalFiles} onClick={() => setStage('confirm')}>下一步<ArrowRight size={15} /></button></>}
-            {stage === 'confirm' && <><button className="cc-button" onClick={() => setStage('preview')}>返回选择</button><button className="cc-button cc-primary" onClick={execute}><Trash2 size={15} />确认移入回收站</button></>}
+            {stage === 'preview' && <><button className="cc-text" disabled={!selected.size} onClick={() => setSelected(new Set())}>清空选择</button><button className="cc-button" onClick={scan}><RotateCcw size={14} />重新扫描</button><button className="cc-button cc-primary" disabled={!totalFiles} onClick={() => void execute()} title="直接删除所选文件，不进入回收站"><Trash2 size={15} />直接删除</button></>}
             {stage === 'executing' && <button className="cc-button cc-primary" disabled><LoaderCircle size={15} className="cc-spin" />清理中…</button>}
             {(stage === 'initial' || stage === 'scanning' || stage === 'error') && <button className="cc-button cc-primary" disabled={busy} onClick={scan}>{busy ? <LoaderCircle size={15} className="cc-spin" /> : <Brush size={15} />}{busy ? '扫描中…' : stage === 'error' ? '重新扫描' : '扫描可清理项目'}</button>}
           </div>
@@ -290,7 +289,7 @@ export function HistoryView({ history, loading, error, compact }: { history: Cle
   if (error) return <div className="cc-nothing"><FileWarning size={28} /><strong>暂时无法读取清理记录</strong><p>请点击「刷新记录」重试。</p><details className="cc-diagnostics"><summary>查看原因</summary><p className="cc-technical">{error}</p></details></div>;
   if (!history) return null;
   return <div className="cc-history">
-    <div className="cc-history-heading"><h3>{compact ? '最近记录' : '清理记录'}</h3><p>查看每次移入回收站的结果，回收站内的文件仍占空间。</p></div>
+    <div className="cc-history-heading"><h3>{compact ? '最近记录' : '清理记录'}</h3><p>查看每次清理的实际结果；旧版回收记录会单独标明。</p></div>
     {history.warnings.length > 0 && <div className="cc-check-notice" role="status"><p>部分记录未能读取，以下记录可能不完整。</p><details className="cc-diagnostics"><summary>查看详情</summary>{history.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</details></div>}
     {history.records.length === 0 ? <div className="cc-nothing"><FolderClock size={32} /><strong>{compact ? '暂未读到已保存的记录' : '还没有清理记录'}</strong><p>{compact ? '本次结果保留在上方，可以刷新记录重试。' : '完成一次清理后，就能在这里查看结果。'}</p></div> : <details className="cc-recent-records" open={!compact}><summary>{compact ? '展开查看' : '最近记录'} · {history.records.length} 次</summary><div className="cc-history-list">{history.records.map((record) => {
       const started = new Date(record.started_at);
@@ -298,7 +297,7 @@ export function HistoryView({ history, loading, error, compact }: { history: Cle
       return <article className="cc-history-record" key={record.id}>
         <div className="cc-history-record-heading"><time dateTime={record.started_at}>{timestamp}</time><span className={`cc-history-status cc-status-${record.status}`}>{historyStatuses[record.status] ?? '未完成'}</span></div>
         <p className="cc-history-projects">{record.selected_rules.map((rule) => rule.title).join('、') || '未记录清理项目'}</p>
-        {record.status === 'incomplete' ? <p className="cc-history-incomplete">这次清理尚未完成，实际清理量可能未记录。</p> : <div className="cc-history-amount"><span>已移入回收站</span><strong>{formatBytes(record.recycled_bytes)}</strong><span>{record.recycled_files.toLocaleString()} 个文件</span></div>}
+        {record.status === 'incomplete' ? <p className="cc-history-incomplete">这次清理尚未完成，实际清理量可能未记录。</p> : <div className="cc-history-amount"><span>{record.permanent_delete ? '已直接删除' : '历史移入回收站'}</span><strong>{formatBytes(record.deleted_bytes)}</strong><span>{record.deleted_files.toLocaleString()} 个文件</span></div>}
         <div className="cc-history-counts"><span>跳过 {record.skipped_files.toLocaleString()}</span><span>失败 {record.failed_files.toLocaleString()}</span></div>
         {record.message && <details className="cc-diagnostics"><summary>查看本次说明</summary><p className="cc-technical">{record.message}</p></details>}
       </article>;
@@ -323,13 +322,13 @@ export function ResultCard({ result }: { result: CacheResult }) {
   const hasUnprocessed = result.failed_files > 0 || result.skipped_files > 0;
   const ResultIcon = hasUnprocessed ? FileWarning : CheckCircle2;
   const title = hasUnprocessed
-    ? result.recycled_files > 0 ? '部分文件未能清理' : '本次未能清理文件'
+    ? result.deleted_files > 0 ? '部分文件未能清理' : '本次未能清理文件'
     : isTauri ? '本次清理已结束' : '演示清理已结束';
   return <div className={`cc-result cc-current-result${hasUnprocessed ? ' cc-result-warning' : ''}`} role="status" aria-label="本次清理结果">
             <div className="cc-result-eyebrow">本次结果</div><span className="cc-result-icon"><ResultIcon size={32} /></span><h3>{title}</h3>
-            <p>移入回收站 <strong>{result.recycled_files.toLocaleString()}</strong> 个文件，合计 <strong>{formatBytes(result.recycled_bytes)}</strong></p>
+            <p>直接删除 <strong>{result.deleted_files.toLocaleString()}</strong> 个文件，合计 <strong>{formatBytes(result.deleted_bytes)}</strong></p>
             <div className="cc-result-counts"><span>跳过 <b>{result.skipped_files.toLocaleString()}</b></span><span>失败 <b>{result.failed_files.toLocaleString()}</b></span></div>
-            <p className="cc-recycle-note"><Trash2 size={16} /> 回收站中仍占空间，需要时可在系统回收站恢复。</p>
+            <p className="cc-recycle-note"><Trash2 size={16} /> 直接删除不进入回收站；未处理的文件保持原样。</p>
             {result.history_warning && <div className="cc-history-save-error" role="alert"><strong>清理记录未能保存</strong><p>{result.history_warning}</p><p>本次清理结果如上，记录可能仍显示为未完成。</p></div>}
             {(result.skipped_files > 0 || result.failed_files > 0) && <p>有些文件未能清理，可以关闭相关软件后重新扫描。</p>}
             {result.messages.filter(isActionable).map((message, i) => <p className="cc-check-notice" key={i}>{message}</p>)}

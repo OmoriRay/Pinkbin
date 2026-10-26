@@ -89,10 +89,16 @@ pub fn execute(
         }
         Action::Delete => {
             for p in &plan.paths {
-                if p.is_dir() {
+                let metadata = std::fs::symlink_metadata(p)?;
+                if metadata.file_type().is_symlink() {
+                    anyhow::bail!("不直接删除链接目标：{}", p.display());
+                }
+                if metadata.is_dir() {
                     std::fs::remove_dir_all(p)?;
-                } else if p.exists() {
+                } else if metadata.is_file() {
                     std::fs::remove_file(p)?;
+                } else {
+                    anyhow::bail!("不是可删除的普通文件或目录：{}", p.display());
                 }
                 out.push(UndoEntry {
                     timestamp: now(),

@@ -209,8 +209,8 @@ pub struct Rule {
 }
 #[derive(Serialize, Default)]
 pub struct CleanupResult {
-    recycled_files: u64,
-    recycled_bytes: u64,
+    deleted_files: u64,
+    deleted_bytes: u64,
     skipped_files: u64,
     failed_files: u64,
     messages: Vec<String>,
@@ -300,7 +300,7 @@ pub async fn execute_cache_cleanup(
             &log,
             &app_data,
             browser_running,
-            crate::recycle_only::recycle,
+            crate::direct_delete::delete,
         )
     })
     .await
@@ -315,7 +315,7 @@ fn execute_recorded_snapshot(
     log: &Path,
     app_data: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    recycle: impl FnMut(&Path) -> Result<(), String>,
+    recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     execute_recorded_snapshot_with_roaming(
         snapshot, base, None, ids, log, app_data, running, recycle,
@@ -332,7 +332,7 @@ fn execute_recorded_snapshot_with_roaming(
     log: &Path,
     app_data: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    recycle: impl FnMut(&Path) -> Result<(), String>,
+    recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     let plan_id = snapshot.id.clone();
     let mut seen = HashSet::new();
@@ -351,8 +351,8 @@ fn execute_recorded_snapshot_with_roaming(
     let (summary, failure) = match &outcome {
         Ok(result) => (
             crate::cleanup_history::HistorySummary {
-                recycled_files: result.recycled_files,
-                recycled_bytes: result.recycled_bytes,
+                deleted_files: result.deleted_files,
+                deleted_bytes: result.deleted_bytes,
                 skipped_files: result.skipped_files,
                 failed_files: result.failed_files,
             },
@@ -426,6 +426,10 @@ fn no_links(path: &Path) -> io::Result<()> {
 fn stamp(path: &Path) -> io::Result<Stamp> {
     no_links(path)?;
     let file = File::open(path)?;
+    stamp_handle(&file)
+}
+
+fn stamp_handle(file: &File) -> io::Result<Stamp> {
     let m = file.metadata()?;
     if !m.is_file() && !m.is_dir() {
         return Err(io::Error::other("不是普通文件或目录"));
@@ -439,6 +443,9 @@ fn stamp(path: &Path) -> io::Result<Stamp> {
         let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
         if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) } == 0 {
             return Err(io::Error::last_os_error());
+        }
+        if m.is_file() && info.nNumberOfLinks != 1 {
+            return Err(io::Error::other("多硬链接文件"));
         }
         (
             info.dwVolumeSerialNumber as u64,
@@ -857,14 +864,14 @@ fn scan_with_limits_with_roaming(
             }
             .into(),
             consequence: match id {
-                "lx-music-cache" => "移入回收站；页面与音频缓存可能需要重新下载，首次打开可能稍慢",
-                "crash-dumps" => "旧崩溃诊断资料将移入回收站",
+                "lx-music-cache" => "直接删除；页面与音频缓存可能需要重新下载，首次打开可能稍慢",
+                "crash-dumps" => "旧崩溃诊断资料将直接删除",
                 "pip-cache" => "以后安装可能需要重新下载或构建；依赖这些缓存的离线安装可能无法进行",
                 "npm-cache" => "以后安装可能需要重新下载；依赖缓存的离线安装可能无法进行",
                 "nvidia-shader" => {
                     "清除后游戏首次运行可能重新编译着色器并出现短暂卡顿；需遵循显卡官方清理流程"
                 }
-                _ => "移入回收站；应用可能重新生成缓存，首次打开可能稍慢",
+                _ => "直接删除；应用可能重新生成缓存，首次打开可能稍慢",
             }
             .into(),
             retention_days: retention_days(id).unwrap(),
@@ -1095,7 +1102,7 @@ fn execute_snapshot(
     ids: &[String],
     log: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    recycle: impl FnMut(&Path) -> Result<(), String>,
+    recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     execute_snapshot_with_roaming(snapshot, current_base, None, ids, log, running, recycle)
 }
@@ -1107,7 +1114,7 @@ fn execute_snapshot_with_roaming(
     ids: &[String],
     log: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    mut recycle: impl FnMut(&Path) -> Result<(), String>,
+    mut recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     execute_snapshot_with_logger_with_roaming(
         snapshot,
@@ -1128,7 +1135,7 @@ fn execute_snapshot_with_logger(
     ids: &[String],
     log: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    recycle: impl FnMut(&Path) -> Result<(), String>,
+    recycle: impl FnMut(&Path, &File) -> Result<(), String>,
     logger: impl FnMut(&mut File, &str, &Path, &str, &str) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     execute_snapshot_with_logger_with_roaming(
@@ -1152,7 +1159,7 @@ fn execute_snapshot_with_logger_with_roaming(
     ids: &[String],
     log: &Path,
     running: impl Fn(&str) -> Result<bool, String>,
-    mut recycle: impl FnMut(&Path) -> Result<(), String>,
+    mut recycle: impl FnMut(&Path, &File) -> Result<(), String>,
     mut logger: impl FnMut(&mut File, &str, &Path, &str, &str) -> Result<(), String>,
 ) -> Result<CleanupResult, String> {
     if snapshot.base != current_base
@@ -1224,13 +1231,19 @@ fn execute_snapshot_with_logger_with_roaming(
             result.skipped_files += 1;
             continue;
         }
-        if let Err(e) = logger(
-            &mut file,
-            &snapshot.id,
-            &c.path,
-            "pending",
-            "准备移入回收站",
-        ) {
+        let Ok(_parent_handles) = crate::direct_delete::hold_parents(&c.path) else {
+            result.skipped_files += 1;
+            continue;
+        };
+        let Ok(target_handle) = crate::direct_delete::open(&c.path) else {
+            result.skipped_files += 1;
+            continue;
+        };
+        if stamp_handle(&target_handle).ok().as_ref() != Some(&c.stamp) {
+            result.skipped_files += 1;
+            continue;
+        }
+        if let Err(e) = logger(&mut file, &snapshot.id, &c.path, "pending", "准备直接删除") {
             result
                 .messages
                 .push(format!("日志写入失败，已停止清理：{e}"));
@@ -1239,7 +1252,7 @@ fn execute_snapshot_with_logger_with_roaming(
             continue;
         }
         actions += 1;
-        // 回收 API 依路径操作，因此尽量缩短最终验证和调用之间的窗口。
+        // Recheck after durable logging, then delete the same exclusive handle.
         let browser_still_closed = processes_closed(&c.rule, &running).is_ok();
         if !browser_still_closed
             || snapshot.roaming.as_ref().is_some_and(|(path, saved)| {
@@ -1248,7 +1261,7 @@ fn execute_snapshot_with_logger_with_roaming(
             })
             || directory_stamp(current_base).ok().as_ref() != Some(&snapshot.base_stamp)
             || directory_stamp(&c.root).ok().as_ref() != Some(&c.root_stamp)
-            || stamp(&c.path).ok().as_ref() != Some(&c.stamp)
+            || stamp_handle(&target_handle).ok().as_ref() != Some(&c.stamp)
         {
             result.skipped_files += 1;
             if let Err(e) = logger(
@@ -1263,11 +1276,18 @@ fn execute_snapshot_with_logger_with_roaming(
             }
             continue;
         }
-        let (status, detail) = match recycle(&c.path) {
+        let action = recycle(&c.path, &target_handle);
+        drop(target_handle);
+        let (status, detail) = match action {
+            Ok(()) if matches!(fs::symlink_metadata(&c.path), Err(e) if e.kind() == io::ErrorKind::NotFound) =>
+            {
+                result.deleted_files += 1;
+                result.deleted_bytes = result.deleted_bytes.saturating_add(c.stamp.len);
+                ("success", "已直接删除".into())
+            }
             Ok(()) => {
-                result.recycled_files += 1;
-                result.recycled_bytes = result.recycled_bytes.saturating_add(c.stamp.len);
-                ("success", "已移入回收站".into())
+                result.failed_files += 1;
+                ("uncertain", "未能确认文件已删除".into())
             }
             Err(e) => {
                 result.failed_files += 1;
@@ -1289,7 +1309,7 @@ fn execute_snapshot_with_logger_with_roaming(
     if result.failed_files > 0 {
         result
             .messages
-            .push("部分文件无法移入回收站，详情见日志".into());
+            .push("部分文件无法直接删除，详情见日志".into());
     }
     Ok(result)
 }
@@ -1376,10 +1396,10 @@ mod tests {
             &t.path().join("audit/actions.jsonl"),
             &t.path().join("history"),
             |_| Ok(false),
-            |path| fs::remove_file(path).map_err(err),
+            crate::direct_delete::delete,
         )
         .unwrap();
-        assert_eq!(result.recycled_files, 25);
+        assert_eq!(result.deleted_files, 25);
         assert!(protected.iter().all(|p| p.exists()));
     }
 
@@ -1415,10 +1435,10 @@ mod tests {
                 &[id.into()],
                 &local.path().join(format!("{id}.jsonl")),
                 |_| Ok(true),
-                |_| panic!("running application must not recycle"),
+                |_, _| panic!("running application must not recycle"),
             )
             .unwrap();
-            assert_eq!(result.recycled_files, 0);
+            assert_eq!(result.deleted_files, 0);
             assert_eq!(result.skipped_files, 1);
         }
     }
@@ -1448,7 +1468,7 @@ mod tests {
                 &[id.into()],
                 &local.path().join("audit"),
                 |name| Ok(started.get() && name.eq_ignore_ascii_case(executable)),
-                |_| panic!("application started after pending log"),
+                |_, _| panic!("application started after pending log"),
                 |file, plan, path, status, detail| {
                     log_event(file, plan, path, status, detail)?;
                     if status == "pending" {
@@ -1458,7 +1478,7 @@ mod tests {
                 },
             )
             .unwrap();
-            assert_eq!(result.recycled_files, 0);
+            assert_eq!(result.deleted_files, 0);
             assert_eq!(result.skipped_files, 1);
         }
     }
@@ -1482,7 +1502,7 @@ mod tests {
             &ELECTRON_IDS.map(String::from),
             &t.path().join("audit1"),
             |_| Ok(false),
-            |_| panic!("changed KnownFolder")
+            |_, _| panic!("changed KnownFolder")
         )
         .is_err());
         let (s, _) = scan_with_roaming(&local, Some(&roaming), |_| Ok(false));
@@ -1495,7 +1515,7 @@ mod tests {
             &ELECTRON_IDS.map(String::from),
             &t.path().join("audit2"),
             |_| Ok(false),
-            |_| panic!("replaced anchor")
+            |_, _| panic!("replaced anchor")
         )
         .is_err());
     }
@@ -1520,7 +1540,7 @@ mod tests {
                 &[id.into()],
                 &t.path().join("audit1"),
                 |_| Ok(false),
-                |_| panic!("replaced cache root"),
+                |_, _| panic!("replaced cache root"),
             )
             .unwrap();
             assert_eq!(r.skipped_files, 1);
@@ -1532,7 +1552,7 @@ mod tests {
                 &[id.into()],
                 &t.path().join("audit2"),
                 |_| Ok(false),
-                |_| panic!("anchor changed after pending"),
+                |_, _| panic!("anchor changed after pending"),
                 |file, plan, path, status, detail| {
                     log_event(file, plan, path, status, detail)?;
                     if status == "pending" {
@@ -1543,7 +1563,7 @@ mod tests {
                 },
             )
             .unwrap();
-            assert_eq!(r.recycled_files, 0);
+            assert_eq!(r.deleted_files, 0);
             assert_eq!(r.skipped_files, 1);
         }
     }
@@ -1684,7 +1704,7 @@ mod tests {
             &t.path().join("log/a.jsonl"),
             &app_data,
             |_| Ok(false),
-            |_| panic!("history must be saved first"),
+            |_, _| panic!("history must be saved first"),
         );
         assert!(result.err().unwrap().contains("本次未执行清理"));
         assert!(target.is_file());
@@ -1704,8 +1724,8 @@ mod tests {
                 &t.path().join("log/a.jsonl"),
                 &app_data,
                 |_| Ok(false),
-                |path| {
-                    fs::remove_file(path).map_err(err)?;
+                |path, _handle| {
+                    crate::direct_delete::delete(path, _handle)?;
                     if break_finish {
                         let root = app_data.join("cleanup-history-v1");
                         let record = fs::read_dir(root).unwrap().next().unwrap().unwrap().path();
@@ -1715,8 +1735,8 @@ mod tests {
                 },
             )
             .unwrap();
-            assert_eq!(result.recycled_files, 1);
-            assert_eq!(result.recycled_bytes, 17);
+            assert_eq!(result.deleted_files, 1);
+            assert_eq!(result.deleted_bytes, 17);
             assert!(!target.exists());
             assert_eq!(result.history_warning.is_some(), break_finish);
             let history = crate::cleanup_history::read_history(&app_data).unwrap();
@@ -1731,8 +1751,8 @@ mod tests {
             );
             assert_eq!(history.records[0].selected_rules[0].title, "用户临时文件");
             if !break_finish {
-                assert_eq!(history.records[0].recycled_files, 1);
-                assert_eq!(history.records[0].recycled_bytes, result.recycled_bytes);
+                assert_eq!(history.records[0].deleted_files, 1);
+                assert_eq!(history.records[0].deleted_bytes, result.deleted_bytes);
             }
         }
     }
@@ -1818,13 +1838,13 @@ mod tests {
             &["npm-cache".into()],
             &t.path().join("log/a.jsonl"),
             |_| Ok(true),
-            |path| {
+            |path, _handle| {
                 assert!(expected.contains(path));
-                Ok(())
+                crate::direct_delete::delete(path, _handle)
             },
         )
         .unwrap();
-        assert_eq!(r.recycled_files, 2);
+        assert_eq!(r.deleted_files, 2);
     }
 
     #[test]
@@ -1848,10 +1868,10 @@ mod tests {
             &["nvidia-shader".into()],
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |_| panic!("read-only reference must not act"),
+            |_, _| panic!("read-only reference must not act"),
         )
         .unwrap();
-        assert_eq!(r.recycled_files, 0);
+        assert_eq!(r.deleted_files, 0);
     }
 
     #[test]
@@ -2016,13 +2036,13 @@ mod tests {
             &ids(),
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |path| {
+            |path, _handle| {
                 recycled.insert(path.to_owned());
-                Ok(())
+                crate::direct_delete::delete(path, _handle)
             },
         )
         .unwrap();
-        assert_eq!(r.recycled_files, expected.len() as u64);
+        assert_eq!(r.deleted_files, expected.len() as u64);
         assert_eq!(recycled, expected);
         assert!(!eligible(
             Path::new("cache"),
@@ -2122,7 +2142,7 @@ mod tests {
                 &[id.into()],
                 &t.path().join("log/a.jsonl"),
                 |name| Ok(name == executable),
-                |_| panic!("running application"),
+                |_, _| panic!("running application"),
             )
             .unwrap();
             assert_eq!(r.skipped_files, 1);
@@ -2140,7 +2160,7 @@ mod tests {
                     checks.set(checks.get() + 1);
                     Ok(checks.get() > 1)
                 },
-                |_| panic!("application started after log write"),
+                |_, _| panic!("application started after log write"),
             )
             .unwrap();
             assert_eq!(r.skipped_files, 1);
@@ -2288,7 +2308,7 @@ mod tests {
             &ids(),
             &t.path().join("logs/a.jsonl"),
             |_| Ok(true),
-            |_| {
+            |_, _| {
                 calls += 1;
                 Ok(())
             },
@@ -2303,7 +2323,7 @@ mod tests {
             &ids(),
             &t.path().join("logs/a.jsonl"),
             |_| Err("cannot check".into()),
-            |_| panic!("must fail closed"),
+            |_, _| panic!("must fail closed"),
         )
         .unwrap();
         assert_eq!(result.skipped_files, 1);
@@ -2321,7 +2341,7 @@ mod tests {
             &ids(),
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |_| panic!("changed file must not be recycled"),
+            |_, _| panic!("changed file must not be recycled"),
         )
         .unwrap();
         assert_eq!(r.skipped_files, 1);
@@ -2340,7 +2360,7 @@ mod tests {
             &ids(),
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |_| panic!("replaced root must not be recycled"),
+            |_, _| panic!("replaced root must not be recycled"),
         )
         .unwrap();
         assert_eq!(r.skipped_files, 1);
@@ -2360,7 +2380,7 @@ mod tests {
             &ids(),
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |_| panic!("replaced base")
+            |_, _| panic!("replaced base")
         )
         .is_err());
     }
@@ -2511,12 +2531,12 @@ mod tests {
             &ids(),
             &t.path().join("log/a.jsonl"),
             |_| Ok(false),
-            |_| panic!("unlogged action"),
+            |_, _| panic!("unlogged action"),
             |_, _, _, _, _| Err("disk full".into()),
         )
         .unwrap();
         assert_eq!(r.skipped_files, 2);
-        assert_eq!(r.recycled_files, 0);
+        assert_eq!(r.deleted_files, 0);
         assert!(r.messages.iter().any(|m| m.contains("disk full")));
     }
 
@@ -2531,7 +2551,7 @@ mod tests {
             &ids(),
             t.path(),
             |_| Ok(false),
-            |_| panic!("unlogged action")
+            |_, _| panic!("unlogged action")
         )
         .is_err());
     }
@@ -2550,18 +2570,18 @@ mod tests {
             &ids(),
             &log,
             |_| Ok(false),
-            |_| {
+            |path, handle| {
                 calls += 1;
                 if calls == 1 {
                     Err("test locked file".into())
                 } else {
-                    Ok(())
+                    crate::direct_delete::delete(path, handle)
                 }
             },
         )
         .unwrap();
         assert_eq!(calls, 2);
-        assert_eq!((r.recycled_files, r.failed_files), (1, 1));
+        assert_eq!((r.deleted_files, r.failed_files), (1, 1));
         let events: Vec<serde_json::Value> = fs::read_to_string(log)
             .unwrap()
             .lines()
@@ -2617,7 +2637,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "仅在显式验证时将自建临时夹具移入 Windows 回收站"]
-    fn cache_cleaner_windows_real_recycle_smoke() {
+    fn cache_cleaner_windows_real_direct_delete_smoke() {
         let t = tempfile::Builder::new()
             .prefix("pinkbin-recycle-smoke-")
             .tempdir()
@@ -2668,22 +2688,22 @@ mod tests {
             &log,
             &app_data,
             |_| Ok(false),
-            |path| {
+            |path, _handle| {
                 assert!(paths.iter().any(|fixture| fixture == path));
-                crate::recycle_only::recycle(path)
+                crate::direct_delete::delete(path, _handle)
             },
         )
         .unwrap();
-        assert_eq!(result.recycled_files, paths.len() as u64);
-        assert_eq!(result.recycled_bytes, expected_bytes);
+        assert_eq!(result.deleted_files, paths.len() as u64);
+        assert_eq!(result.deleted_bytes, expected_bytes);
         assert_eq!(result.skipped_files, 0);
         assert_eq!(result.failed_files, 0);
         assert!(result.history_warning.is_none());
         let history = crate::cleanup_history::read_history(&app_data).unwrap();
         assert_eq!(history.records.len(), 1);
         assert_eq!(history.records[0].status, "completed");
-        assert_eq!(history.records[0].recycled_files, paths.len() as u64);
-        assert_eq!(history.records[0].recycled_bytes, expected_bytes);
+        assert_eq!(history.records[0].deleted_files, paths.len() as u64);
+        assert_eq!(history.records[0].deleted_bytes, expected_bytes);
         assert!(paths.iter().all(|path| !path.exists()));
         assert!(protected.is_file());
         assert!(fresh.is_file());
@@ -2697,17 +2717,11 @@ mod tests {
             assert_eq!(event[0]["status"], "pending");
             assert_eq!(event[1]["status"], "success");
         }
-        let recycled = trash::os_limited::list()
+        assert!(!trash::os_limited::list()
             .unwrap()
-            .into_iter()
-            .filter(|item| paths.contains(&item.original_path()))
-            .collect::<Vec<_>>();
-        assert_eq!(recycled.len(), paths.len());
-        trash::os_limited::restore_all(recycled).unwrap();
-        assert!(paths.iter().all(|path| path.is_file()));
-        assert!(paths
             .iter()
-            .all(|path| fs::read(path).unwrap() == b"cached test bytes"));
+            .any(|item| paths.contains(&item.original_path())));
+        assert!(paths.iter().all(|path| !path.exists()));
     }
 
     #[cfg(windows)]

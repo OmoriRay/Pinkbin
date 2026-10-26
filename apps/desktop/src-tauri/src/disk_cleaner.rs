@@ -279,8 +279,8 @@ struct Entry {
 }
 #[derive(Serialize, Default)]
 pub struct CacheResult {
-    recycled_files: u64,
-    recycled_bytes: u64,
+    deleted_files: u64,
+    deleted_bytes: u64,
     skipped_files: u64,
     failed_files: u64,
     messages: Vec<String>,
@@ -1034,10 +1034,10 @@ fn hold_file(path: &Path) -> io::Result<File> {
         use std::os::windows::fs::OpenOptionsExt;
         // Include FILE_READ_DATA to participate in Windows share checking; attributes-only
         // opens do not enforce sharing. No read is issued against this handle.
-        // Allow Shell's DELETE access but exclude writers for the duration of the action.
+        // Exclusive DELETE access binds the action to this verified file handle.
         OpenOptions::new()
-            .access_mode(0x80 | 1)
-            .share_mode(1 | 4)
+            .access_mode(0x10000 | 0x80 | 1)
+            .share_mode(0)
             .custom_flags(0x00200000)
             .open(path)
     }
@@ -1069,8 +1069,8 @@ pub async fn execute_disk_cleanup(
     }
     tokio::task::spawn_blocking(move || {
         let _lease = lease;
-        execute_recorded(snapshot, &file_ids, &app_data, |p| {
-            crate::recycle_only::recycle(p)
+        execute_recorded(snapshot, &file_ids, &app_data, |p, _handle| {
+            crate::direct_delete::delete(p, _handle)
         })
     })
     .await
@@ -1086,7 +1086,7 @@ fn execute_recorded(
     snapshot: Snapshot,
     ids: &[String],
     app_data: &Path,
-    recycle: impl FnMut(&Path) -> Result<(), String>,
+    recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CacheResult, String> {
     let selected: HashSet<_> = ids.iter().map(String::as_str).collect();
     let mut categories = HashSet::new();
@@ -1105,8 +1105,8 @@ fn execute_recorded(
     let (summary, failure) = match &outcome {
         Ok(r) => (
             crate::cleanup_history::HistorySummary {
-                recycled_files: r.recycled_files,
-                recycled_bytes: r.recycled_bytes,
+                deleted_files: r.deleted_files,
+                deleted_bytes: r.deleted_bytes,
                 skipped_files: r.skipped_files,
                 failed_files: r.failed_files,
             },
@@ -1138,7 +1138,7 @@ fn execute_files(
     snapshot: &Snapshot,
     selected: &HashSet<&str>,
     app_data: &Path,
-    mut recycle: impl FnMut(&Path) -> Result<(), String>,
+    mut recycle: impl FnMut(&Path, &File) -> Result<(), String>,
 ) -> Result<CacheResult, String> {
     execute_files_with_logger(snapshot, selected, app_data, &mut recycle, log_line)
 }
@@ -1146,7 +1146,7 @@ fn execute_files_with_logger(
     snapshot: &Snapshot,
     selected: &HashSet<&str>,
     app_data: &Path,
-    mut recycle: impl FnMut(&Path) -> Result<(), String>,
+    mut recycle: impl FnMut(&Path, &File) -> Result<(), String>,
     mut logger: impl FnMut(&mut File, &str, &Path, &str) -> Result<(), String>,
 ) -> Result<CacheResult, String> {
     safe_ancestors(app_data).map_err(text_error)?;
@@ -1200,18 +1200,20 @@ fn execute_files_with_logger(
             result.skipped_files += 1;
             continue;
         }
-        // trash operates on a path. Revalidate after durable pending and immediately before calling it.
+        // Revalidate after durable pending, then delete the same held file.
         if stamp_handle(&target_handle, false).ok().as_ref() != Some(&c.stamp)
             || !valid_candidate(c)
         {
             result.skipped_files += 1;
             continue;
         }
-        let status = match recycle(&c.path) {
+        let action = recycle(&c.path, &target_handle);
+        drop(target_handle);
+        let status = match action {
             Ok(()) if matches!(fs::symlink_metadata(&c.path), Err(e) if e.kind() == io::ErrorKind::NotFound) =>
             {
-                result.recycled_files += 1;
-                result.recycled_bytes = result.recycled_bytes.saturating_add(c.stamp.size);
+                result.deleted_files += 1;
+                result.deleted_bytes = result.deleted_bytes.saturating_add(c.stamp.size);
                 "success"
             }
             Ok(()) => {
@@ -1219,14 +1221,14 @@ fn execute_files_with_logger(
                 if !result.messages.iter().any(|m| m.contains("未能确认")) {
                     result
                         .messages
-                        .push("部分文件未能确认移入回收站，未计入成功数量。".into());
+                        .push("部分文件未能确认直接删除，未计入成功数量。".into());
                 }
                 "uncertain"
             }
             Err(error) => {
                 result.failed_files += 1;
                 if result.messages.len() < 8 {
-                    result.messages.push(format!("文件未能确认回收：{error}"));
+                    result.messages.push(format!("文件未能确认删除：{error}"));
                 }
                 "failed"
             }
@@ -1244,10 +1246,7 @@ fn execute_files_with_logger(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        cell::{Cell, RefCell},
-        fs::FileTimes,
-    };
+    use std::fs::FileTimes;
 
     fn old_file(path: &Path, days: u64) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1613,35 +1612,31 @@ mod tests {
         assert!(!valid_candidate(&plan.candidates[0]));
     }
     #[test]
-    fn durable_pending_precedes_action_and_mutation_after_pending_is_rechecked() {
+    fn durable_pending_precedes_delete_and_exclusive_handle_blocks_mutation() {
         let tmp = tempfile::tempdir().unwrap();
         let logs = tempfile::tempdir().unwrap();
         old_file(&tmp.path().join("a.tmp"), 8);
         let (plan, _) = scan(tmp.path());
-        let calls = Cell::new(0);
         let outcome = execute_files_with_logger(
             &plan,
             &selected(&plan),
             logs.path(),
-            |_| {
-                calls.set(calls.get() + 1);
-                Ok(())
-            },
+            crate::direct_delete::delete,
             |file, id, path, status| {
                 log_line(file, id, path, status)?;
                 if status == "pending" {
-                    fs::remove_file(path).unwrap();
-                    fs::write(path, b"changed during pending").unwrap();
+                    assert!(fs::remove_file(path).is_err());
+                    assert!(fs::write(path, b"changed during pending").is_err());
                 }
                 Ok(())
             },
         )
         .unwrap();
-        assert_eq!(calls.get(), 0);
-        assert_eq!(outcome.skipped_files, 1);
-        assert!(fs::read_to_string(&outcome.log_path)
-            .unwrap()
-            .contains("pending"));
+        assert_eq!(outcome.deleted_files, 1);
+        assert_eq!(outcome.skipped_files, 0);
+        let log = fs::read_to_string(&outcome.log_path).unwrap();
+        assert!(log.contains("pending") && log.contains("success"));
+        assert!(!tmp.path().join("a.tmp").exists());
     }
     #[test]
     fn failed_pending_log_never_calls_recycle() {
@@ -1653,11 +1648,11 @@ mod tests {
             &plan,
             &selected(&plan),
             logs.path(),
-            |_| panic!("must not recycle"),
+            |_, _| panic!("must not recycle"),
             |_, _, _, _| Err("injected".into()),
         )
         .unwrap();
-        assert_eq!(outcome.recycled_files, 0);
+        assert_eq!(outcome.deleted_files, 0);
         assert_eq!(outcome.skipped_files, 1);
     }
     #[test]
@@ -1668,7 +1663,9 @@ mod tests {
         fs::write(logs.path().join("cleanup-history-v1"), b"blocked").unwrap();
         let (plan, _) = scan(tmp.path());
         let ids: Vec<_> = plan.candidates.iter().map(|c| c.id.clone()).collect();
-        assert!(execute_recorded(plan, &ids, logs.path(), |_| panic!("must not recycle")).is_err());
+        assert!(
+            execute_recorded(plan, &ids, logs.path(), |_, _| panic!("must not recycle")).is_err()
+        );
     }
     #[test]
     fn history_finish_failure_preserves_real_action_statistics() {
@@ -1677,7 +1674,7 @@ mod tests {
         old_file(&tmp.path().join("a.tmp"), 8);
         let (plan, _) = scan(tmp.path());
         let ids: Vec<_> = plan.candidates.iter().map(|c| c.id.clone()).collect();
-        let outcome = execute_recorded(plan, &ids, logs.path(), |path| {
+        let outcome = execute_recorded(plan, &ids, logs.path(), |path, _handle| {
             let record = fs::read_dir(logs.path().join("cleanup-history-v1"))
                 .unwrap()
                 .next()
@@ -1685,12 +1682,12 @@ mod tests {
                 .unwrap()
                 .path();
             fs::write(record.join("finish.json"), b"injected conflict").unwrap();
-            fs::remove_file(path).unwrap();
+            crate::direct_delete::delete(path, _handle).unwrap();
             Ok(())
         })
         .unwrap();
-        assert_eq!(outcome.recycled_files, 1);
-        assert_eq!(outcome.recycled_bytes, 12);
+        assert_eq!(outcome.deleted_files, 1);
+        assert_eq!(outcome.deleted_bytes, 12);
         assert!(outcome.history_warning.is_some());
     }
     #[test]
@@ -1701,18 +1698,18 @@ mod tests {
         old_file(&tmp.path().join("b.tmp"), 8);
         let (plan, _) = scan(tmp.path());
         let mut count = 0;
-        let outcome = execute_files(&plan, &selected(&plan), logs.path(), |path| {
+        let outcome = execute_files(&plan, &selected(&plan), logs.path(), |path, _handle| {
             count += 1;
             if count == 1 {
                 Err("in use".into())
             } else {
-                fs::remove_file(path).unwrap();
+                crate::direct_delete::delete(path, _handle).unwrap();
                 Ok(())
             }
         })
         .unwrap();
         assert_eq!(outcome.failed_files, 1);
-        assert_eq!(outcome.recycled_files, 1);
+        assert_eq!(outcome.deleted_files, 1);
     }
     #[test]
     fn recycler_ok_without_source_disappearance_is_uncertain_not_success() {
@@ -1720,8 +1717,8 @@ mod tests {
         let logs = tempfile::tempdir().unwrap();
         old_file(&tmp.path().join("a.tmp"), 8);
         let (plan, _) = scan(tmp.path());
-        let outcome = execute_files(&plan, &selected(&plan), logs.path(), |_| Ok(())).unwrap();
-        assert_eq!(outcome.recycled_files, 0);
+        let outcome = execute_files(&plan, &selected(&plan), logs.path(), |_, _| Ok(())).unwrap();
+        assert_eq!(outcome.deleted_files, 0);
         assert_eq!(outcome.failed_files, 1);
         assert!(fs::read_to_string(outcome.log_path)
             .unwrap()
@@ -1729,59 +1726,27 @@ mod tests {
     }
     #[cfg(windows)]
     #[test]
-    fn real_windows_recycle_only_fixture_smoke() {
+    fn real_windows_direct_delete_fixture_smoke() {
         let tmp = tempfile::tempdir().unwrap();
         let logs = tempfile::tempdir().unwrap();
-        let canonical = fs::canonicalize(tmp.path()).unwrap();
-        let root = PathBuf::from(canonical.to_str().unwrap().trim_start_matches(r"\\?\"));
-        let path = root.join("Pinkbin 测试 🌸 owned smoke.tmp");
+        let path = tmp.path().join("Pinkbin owned fixture 🌸.tmp");
+        let neighbor = tmp.path().join("keep.txt");
         old_file(&path, 8);
-        let (plan, _) = scan(&root);
+        fs::write(&neighbor, b"keep").unwrap();
+        let (plan, _) = scan(tmp.path());
         let ids: Vec<_> = plan.candidates.iter().map(|c| c.id.clone()).collect();
-        let errors = RefCell::new(Vec::new());
-        let outcome = execute_recorded(plan, &ids, logs.path(), |p| {
-            crate::recycle_only::recycle(p).inspect_err(|error| {
-                errors.borrow_mut().push(error.clone());
-            })
-        })
-        .unwrap();
-        let own_recycled_count = trash::os_limited::list()
-            .unwrap()
-            .into_iter()
-            .filter(|item| item.original_path() == path)
-            .count();
-        assert_eq!(
-            outcome.recycled_files,
-            1,
-            "messages={:?}, errors={:?}, failed={}, skipped={}, own-bin={}",
-            outcome.messages,
-            errors.borrow(),
-            outcome.failed_files,
-            outcome.skipped_files,
-            own_recycled_count
-        );
-        assert_eq!(outcome.failed_files + outcome.skipped_files, 0);
+        let outcome =
+            execute_recorded(plan, &ids, logs.path(), crate::direct_delete::delete).unwrap();
+        assert_eq!(outcome.deleted_files, 1, "{:?}", outcome.messages);
         assert!(!path.exists());
-        let actions = fs::read_to_string(outcome.log_path).unwrap();
-        assert!(actions.contains("pending") && actions.contains("success"));
-        let record = fs::read_dir(logs.path().join("cleanup-history-v1"))
+        assert_eq!(fs::read(&neighbor).unwrap(), b"keep");
+        let history = crate::cleanup_history::read_history(logs.path()).unwrap();
+        assert!(history.records[0].permanent_delete);
+        assert_eq!(history.records[0].deleted_files, 1);
+        assert!(!trash::os_limited::list()
             .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
-        let finish: serde_json::Value =
-            serde_json::from_slice(&fs::read(record.join("finish.json")).unwrap()).unwrap();
-        assert_eq!(finish["summary"]["recycled_files"], 1);
-        assert!(outcome.history_warning.is_none());
-        let recycled: Vec<_> = trash::os_limited::list()
-            .unwrap()
-            .into_iter()
-            .filter(|item| item.original_path() == path)
-            .collect();
-        assert_eq!(recycled.len(), 1);
-        trash::os_limited::restore_all(recycled).unwrap();
-        assert!(path.is_file());
+            .iter()
+            .any(|item| item.original_path() == path));
     }
     #[cfg(windows)]
     #[test]
@@ -1801,34 +1766,20 @@ mod tests {
         assert_eq!(plan.candidates.len(), 1);
         let ids: Vec<_> = plan.candidates.iter().map(|c| c.id.clone()).collect();
         let outcome =
-            execute_recorded(plan, &ids, logs.path(), crate::recycle_only::recycle).unwrap();
+            execute_recorded(plan, &ids, logs.path(), crate::direct_delete::delete).unwrap();
         assert_eq!(
-            outcome.recycled_files + outcome.failed_files + outcome.skipped_files,
+            outcome.deleted_files + outcome.failed_files + outcome.skipped_files,
             1
         );
-        if outcome.recycled_files == 1 {
+        if outcome.deleted_files == 1 {
             assert!(!path.exists());
         } else {
-            assert_eq!(outcome.recycled_files, 0);
+            assert_eq!(outcome.deleted_files, 0);
         }
-        // Restore only the exact owned fixture if Shell recycled it, even if a
-        // confirmation could not be obtained. Never act on unrelated bin items.
-        let recycled: Vec<_> = trash::os_limited::list()
+        assert!(!trash::os_limited::list()
             .unwrap()
-            .into_iter()
-            .filter(|item| item.original_path() == path)
-            .collect();
-        eprintln!(
-            "owned long-path fixture: recycled={}, failed={}, skipped={}, exact restore matches={}",
-            outcome.recycled_files,
-            outcome.failed_files,
-            outcome.skipped_files,
-            recycled.len()
-        );
-        if !recycled.is_empty() {
-            trash::os_limited::restore_all(recycled).unwrap();
-            assert!(path.is_file());
-        }
+            .iter()
+            .any(|item| item.original_path() == path));
     }
     #[cfg(windows)]
     #[test]
