@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, CheckCircle2, Info, Eye, EyeOff, Settings2, PlugZap } from 'lucide-react';
+import { X, CheckCircle2, Eye, EyeOff, Settings2, PlugZap } from 'lucide-react';
 import { api } from '../api';
 import { isTauri } from '../env';
 import type { AppInfoState } from '../appInfo';
@@ -132,11 +132,6 @@ export function Settings({ onClose, appInfo }: Props) {
           <button className="ghost icon" aria-label="关闭 AI 顾问设置" onClick={onClose}><X size={16} /></button>
         </div>
 
-        <p className="hint">
-          <Info size={12} />
-          <span>填写服务商提供的 Base URL、API Key 和模型名。支持兼容接口与本地 Ollama；保存只记录配置，可点击「测试」验证连接。</span>
-        </p>
-
         <label className="field">
           <span>Base URL</span>
           <input
@@ -161,8 +156,8 @@ export function Settings({ onClose, appInfo }: Props) {
 
         <p className="provider-explanation muted small">
           {provider === 'openai'
-            ? '“OpenAI 兼容接口”仅表示请求格式，不代表服务商是 OpenAI。实际服务由你填写的 Base URL 决定。'
-            : '接口类型决定请求格式，实际服务由你填写的 Base URL 决定。'}
+            ? '“OpenAI 兼容接口”仅指请求格式，实际服务商取决于 Base URL。'
+            : '接口类型仅指请求格式，实际服务商取决于 Base URL。'}
         </p>
 
         {baseUrl.trim() && showManual && (
@@ -189,7 +184,7 @@ export function Settings({ onClose, appInfo }: Props) {
 
         {needsKey && (
           <label className="field">
-            <span>API Key（保存在本机，用于请求所填服务）</span>
+            <span>API Key</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type={showKey ? 'text' : 'password'}
@@ -223,7 +218,12 @@ export function Settings({ onClose, appInfo }: Props) {
             onChange={(e) => setModel(e.target.value)}
             placeholder="gpt-4o-mini · deepseek-chat · claude-haiku-4-5 …"
           />
-          {testResult && <div className="settings-test-result" data-state={testResult.kind} role={testResult.kind === 'error' ? 'alert' : 'status'}>{testResult.message}</div>}
+          {testResult && (
+            <div className="settings-test-result" data-state={testResult.kind} role={testResult.kind === 'error' ? 'alert' : 'status'} aria-atomic="true">
+              {testResult.kind === 'success' && <CheckCircle2 size={20} aria-hidden="true" />}
+              <div>{testResult.message}</div>
+            </div>
+          )}
         </div>
 
         {isTauri && <div className="field">
@@ -245,7 +245,7 @@ export function Settings({ onClose, appInfo }: Props) {
         </div>
 
         <p className="muted small" style={{ marginTop: 4 }}>
-          Pinkbin 只把目录元数据发给 AI（路径、大小、文件数、扩展名分布、抽样路径），<strong>不会</strong>读取或上传文件内容。
+          配置保存在本机。消息、文件信息和附图会发送给你配置的 AI 服务。
         </p>
         <section className="app-about" aria-label="关于 Pinkbin">
           <h2>关于 Pinkbin</h2>

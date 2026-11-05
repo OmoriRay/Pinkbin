@@ -2,14 +2,20 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from './env';
 import { addDemoCleanupHistory, type CacheResult } from './cacheCleanerApi';
+import { startDemoInventory, pollDemoInventory, demoInventoryEpoch, invalidateDemoInventory, type DemoRequest } from './sharedScanDemo';
+export type DiskScanMode = 'full' | 'quick';
 export interface CleanupDrive { id: string; label: string; total_bytes: number; available_bytes: number }
 export interface DiskEntry { id: string; category: string; title: string; risk: string; size: number; path: string; modified: string | number | null; default_selected: boolean }
 export interface DiskGroup { id: string; title: string; description?: string; risk: string; file_count: number; bytes: number; entries: DiskEntry[] }
-export interface DiskProgress { scan_id: string; drive_id: string; scanned_files: number; scanned_bytes: number; scanned_directories: number; denied_directories: number; protected_directories: number; linked_entries: number }
-export interface DiskPlan { plan_id: string; scan_id: string; created_at: string; groups: DiskGroup[]; stats: Omit<DiskProgress, 'scan_id' | 'drive_id'> & { limited: boolean; cancelled: boolean }; warnings: string[] }
-export interface DiskScanSession { scan_id: string; drive_ids: string[]; status: 'running' | 'completed' | 'failed' | 'cancelled'; progress: DiskProgress | null; preview: DiskPlan | null; error: string | null }
+export type RecommendationCategory = 'application_cache' | 'build_cache' | 'diagnostics' | 'temporary';
+export interface RecommendedGroup { id: string; category?: RecommendationCategory; title: string; file_count: number; bytes: number }
+export interface RecommendedCleanup { file_count: number; bytes: number; groups: RecommendedGroup[]; blocked_apps: string[]; limited: boolean; warning: string | null }
+export interface DiskProgress { phase?: 'files' | 'recommendations'; scan_id: string; drive_id: string; scanned_files: number; scanned_bytes: number; scanned_directories: number; denied_directories: number; protected_directories: number; linked_entries: number }
+export interface SpaceUsage { path: string; title: string; file_count: number; bytes: number }
+export interface DiskPlan { scan_mode?: DiskScanMode; shared_reused?: boolean; overview?: SpaceUsage[]; unclassified_caches?: SpaceUsage[]; overview_limited?: boolean; recommended?: RecommendedCleanup | null; plan_id: string; scan_id: string; created_at: string; groups: DiskGroup[]; stats: Omit<DiskProgress, 'scan_id' | 'drive_id'> & { limited: boolean; cancelled: boolean }; warnings: string[] }
+export interface DiskScanSession { scan_mode?: DiskScanMode; scan_id: string; drive_ids: string[]; status: 'running' | 'completed' | 'failed' | 'cancelled'; progress: DiskProgress | null; preview: DiskPlan | null; error: string | null }
 const demoSessionKey = 'pinkbin-demo-disk-session';
-type DemoSession = { session: DiskScanSession; startedAt: number };
+type DemoSession = { session: DiskScanSession; startedAt: number; request?: DemoRequest; epoch?: number };
 function readDemoSession(): DemoSession | null {
   try { return JSON.parse(sessionStorage.getItem(demoSessionKey) || 'null'); } catch { return null; }
 }
@@ -37,26 +43,37 @@ export async function cancelDiskCleanupScan(scanId: string): Promise<boolean> {
   if (demoSession?.session.scan_id === scanId && demoSession.session.status === 'running') saveDemoSession({ ...demoSession, session: { ...demoSession.session, status: 'cancelled', preview: null } });
   cancelled.add(scanId); return true;
 }
-export async function startDiskCleanupScan(driveIds: string[], scanId: string): Promise<DiskScanSession> {
-  if (isTauri) return invoke('start_disk_cleanup_scan', { driveIds, scanId });
+export async function startDiskCleanupScan(driveIds: string[], scanId: string, force = false, mode: DiskScanMode = 'full'): Promise<DiskScanSession> {
+  if (isTauri) return invoke('start_disk_cleanup_scan', { driveIds, scanId, force, mode });
+  if ((await getDiskCleanupExecution())?.status === 'running') throw new Error('已有清理任务正在进行，请等待完成。');
   if (demoSession?.session.status === 'running') return (await getDiskCleanupScan())!;
-  const session: DiskScanSession = { scan_id: scanId, drive_ids: driveIds, status: 'running', progress: null, preview: null, error: null };
-  saveDemoSession({ session, startedAt: Date.now() });
+  demoExecution = null;
+  try { sessionStorage.removeItem(demoExecutionKey); } catch { /* 演示存储不可用。 */ }
+  const session: DiskScanSession = { scan_mode: mode, scan_id: scanId, drive_ids: driveIds, status: 'running', progress: null, preview: null, error: null };
+  const request = mode === 'full' ? startDemoInventory(driveIds, force) : undefined;
+  saveDemoSession({ session, startedAt: Date.now(), request, epoch: demoInventoryEpoch() });
   return session;
 }
 export async function getDiskCleanupScan(): Promise<DiskScanSession | null> {
   if (isTauri) return invoke('get_disk_cleanup_scan');
   if (!demoSession) return null;
   const current = demoSession;
+  if ((current.epoch ?? current.request?.epoch ?? demoInventoryEpoch()) !== demoInventoryEpoch()) {
+    demoPlan = null;
+    saveDemoSession({ ...current, session: { ...current.session, status: 'failed', preview: null, error: '文件列表可能已变化，请重新检查' } });
+    return demoSession!.session;
+  }
   if (current.session.status === 'completed' && current.session.preview && Date.now() - new Date(current.session.preview.created_at).getTime() > 15 * 60 * 1000) {
     demoPlan = null;
     saveDemoSession({ ...current, session: { ...current.session, status: 'failed', preview: null, error: '预览已过期，请重新检查。' } });
     return demoSession!.session;
   }
   if (current.session.status === 'running') {
-    const step = Math.min(12, Math.floor((Date.now() - current.startedAt) / 400));
+    const shared = current.request ? pollDemoInventory(current.request) : null;
+    const step = shared ? Math.floor(shared.fraction * 12) : Math.min(12, Math.floor((Date.now() - current.startedAt) / (current.session.scan_mode === 'quick' ? 75 : 400)));
     const progress: DiskProgress = { scan_id: current.session.scan_id, drive_id: current.session.drive_ids[Math.min(current.session.drive_ids.length - 1, Math.floor(step / 6))], scanned_files: step * 2351, scanned_bytes: step * 3.7 * GiB, scanned_directories: step * 173, denied_directories: 2, protected_directories: 8, linked_entries: 0 };
-    const preview = step === 12 ? await createDemoPlan(current.session.drive_ids, current.session.scan_id, true) : null;
+    const preview = step === 12 ? await createDemoPlan(current.session.drive_ids, current.session.scan_id, true, current.session.scan_mode ?? 'full') : null;
+    if (preview && shared) { preview.shared_reused = current.request?.reused; preview.created_at = new Date(shared.at).toISOString(); }
     // 异步生成结果期间可能收到显式取消；不覆盖更新后的会话。
     if (demoSession !== current) return demoSession?.session ?? null;
     saveDemoSession({ ...current, session: { ...current.session, progress, preview, status: preview ? 'completed' : 'running' } });
@@ -69,7 +86,7 @@ export async function previewDiskCleanup(driveIds: string[], scanId: string): Pr
   if (isTauri) return invoke('preview_disk_cleanup', { driveIds, scanId });
   return createDemoPlan(driveIds, scanId);
 }
-async function createDemoPlan(driveIds: string[], scanId: string, immediate = false): Promise<DiskPlan> {
+async function createDemoPlan(driveIds: string[], scanId: string, immediate = false, mode: DiskScanMode = 'full'): Promise<DiskPlan> {
   let progress: DiskProgress = { scan_id: scanId, drive_id: driveIds[0], scanned_files: 0, scanned_bytes: 0, scanned_directories: 0, denied_directories: 0, protected_directories: 0, linked_entries: 0 };
   for (let step = 1; step <= 12; step++) {
     if (!immediate) await wait(180);
@@ -79,14 +96,34 @@ async function createDemoPlan(driveIds: string[], scanId: string, immediate = fa
   }
   const wasCancelled = cancelled.delete(scanId);
   const definitions = [['temp', '旧临时文件', '临时文件也可能仍有用途，请先确认文件位置。', 'tmp', 72], ['crash', '旧故障记录', '排查软件故障时可能需要这些诊断资料。', 'dmp', 3], ['logs', '旧日志文件', '清理后无法再查看这些旧运行记录。', 'log', 8], ['installers', '较旧安装介质', '可能是需要保留的安装包，确认已安装且不再需要后再选择。', 'msi', 6], ['large', '大文件', '大文件不等于垃圾，可能是照片、视频或工作资料，请逐个判断。', 'mp4', 4]] as const;
-  const groups: DiskGroup[] = wasCancelled ? [] : definitions.map(([id, title, description, extension, count]) => {
+  const groups: DiskGroup[] = wasCancelled || mode === 'quick' ? [] : definitions.map(([id, title, description, extension, count]) => {
     const entries = Array.from({length: count}, (_, index) => {
       const drive = driveIds[index % driveIds.length];
       return { id: `${drive}${id}-${index}`, category: id, title: id === 'large' ? `旅行视频-${index + 1}.${extension}` : `${id === 'installers' ? '软件安装包' : 'example'}-${String(index + 1).padStart(3,'0')}.${extension}`, risk: 'review', size: id === 'large' ? (index + 1) * 1.3 * GiB : (index + 1) * 1024 * 1024, path: `${drive}${id === 'large' ? 'Videos\\旅行记录' : id === 'installers' ? 'Downloads' : '旧软件\\残留文件'}\\${id}-${index + 1}.${extension}`, modified: '2026-06-12T10:30:00Z', default_selected: false };
     }).filter(entry => !recycled.has(entry.id));
     return {id, title, description, risk: 'review', entries, file_count: entries.length, bytes: entries.reduce((sum, entry) => sum + entry.size, 0)};
   });
-  demoPlan = { plan_id: wasCancelled ? '' : `disk-demo-${Date.now()}`, scan_id: scanId, created_at: new Date().toISOString(), groups, stats: { ...progress, cancelled: wasCancelled, limited: false }, warnings: [] };
+  const knownDrives = new Set(['C:\\']);
+  try {
+    const data = JSON.parse(localStorage.getItem('pinkbin.demo.known-cleanup-locations.v1') || 'null');
+    for (const entry of data?.locations ?? []) if (typeof entry.drive_id === 'string') knownDrives.add(entry.drive_id);
+  } catch { /* Preview-only metadata. */ }
+  const coveredDrives = mode === 'quick' ? driveIds.filter(id => knownDrives.has(id)) : driveIds;
+  const groupsForQuick = wasCancelled ? [] : [
+    ...(coveredDrives.includes('C:\\') ? [{ category: 'application_cache' as const, title: '浏览器缓存', file_count: 128, bytes: 96 * 1024 ** 2 }, { category: 'application_cache' as const, title: '应用界面缓存', file_count: 64, bytes: 32 * 1024 ** 2 }, { category: 'diagnostics' as const, title: '旧崩溃转储', file_count: 12, bytes: 16 * 1024 ** 2 }, { category: 'diagnostics' as const, title: '旧 Windows 错误报告', file_count: 20, bytes: 64 * 1024 ** 2 }, { category: 'application_cache' as const, title: 'Epic 启动器网页缓存', file_count: 210, bytes: 128 * 1024 ** 2 }, { category: 'build_cache' as const, title: 'JetBrains 旧索引缓存', file_count: 120, bytes: 64 * 1024 ** 2 }, { category: 'application_cache' as const, title: '更多浏览器缓存', file_count: 44, bytes: 96 * 1024 ** 2 }].map((group,index) => ({...group, id: "demo-c-" + index})) : []),
+    ...(coveredDrives.includes('D:\\') ? [{ category: 'temporary' as const, title: '过期临时文件', file_count: 35, bytes: 64 * 1024 ** 2 }, { category: 'build_cache' as const, title: 'Python 编译缓存', file_count: 120, bytes: 32 * 1024 ** 2 }, { category: 'application_cache' as const, title: '便携编辑器缓存', file_count: 18, bytes: 96 * 1024 ** 2 }, { category: 'build_cache' as const, title: '旧 NuGet 下载缓存', file_count: 55, bytes: 64 * 1024 ** 2 }, { category: 'build_cache' as const, title: '旧 Rust 增量编译缓存', file_count: 64, bytes: 256 * 1024 ** 2 }, { category: 'application_cache' as const, title: '独立浏览器缓存', file_count: 655, bytes: 128 * 1024 ** 2 }].map((group,index) => ({...group, id: "demo-d-" + index})) : []),
+  ].filter(group => !demoDeletedGroups.has(group.id));
+  const recommended: RecommendedCleanup = { groups: groupsForQuick, file_count: groupsForQuick.reduce((n,g)=>n+g.file_count,0), bytes: groupsForQuick.reduce((n,g)=>n+g.bytes,0), blocked_apps: [], limited: false, warning: null };
+  demoPlan = { scan_mode: mode, plan_id: wasCancelled ? '' : `disk-demo-${Date.now()}`, scan_id: scanId, created_at: new Date().toISOString(), recommended, groups,
+    overview: mode === 'quick' ? [] : driveIds.flatMap(drive => [{path: `${drive}应用与资料`, title: `${drive}应用与资料`, file_count: 1200, bytes: 125 * GiB}, {path: `${drive}$RECYCLE.BIN`, title: `${drive} 回收站`, file_count: 300, bytes: 52 * GiB}]),
+    unclassified_caches: mode === 'quick' ? [] : [{path: `${driveIds[0]}待核实缓存目录`, title: '待核实缓存目录', file_count: 45, bytes: 384 * 1024 ** 2}], overview_limited: false, stats: { ...progress, cancelled: wasCancelled, limited: false }, warnings: [] };
+  if (mode === 'quick') {
+    demoPlan.stats = { ...demoPlan.stats, scanned_files: recommended.file_count + (coveredDrives.length ? 12 : 0), scanned_bytes: recommended.bytes, scanned_directories: coveredDrives.length * 8 };
+    demoPlan.shared_reused = false;
+  } else if (!wasCancelled) {
+    const locations = [...new Set([...knownDrives, ...driveIds])].map(drive => ({drive_id: drive, path: `${drive}Programs\\MockApp\\Cache`}));
+    localStorage.setItem('pinkbin.demo.known-cleanup-locations.v1', JSON.stringify({version:1,locations}));
+  }
   return demoPlan;
 }
 export async function executeDiskCleanup(planId: string, fileIds: string[]): Promise<CacheResult> {
@@ -94,6 +131,7 @@ export async function executeDiskCleanup(planId: string, fileIds: string[]): Pro
   const current = demoPlan; demoPlan = null;
   saveDemoSession(null);
   if (!current || current.plan_id !== planId) throw new Error('预览已过期，请重新检查。');
+  invalidateDemoInventory();
   await wait(650);
   const entries = current.groups.flatMap(group => group.entries).filter(entry => fileIds.includes(entry.id));
   entries.forEach(entry => recycled.add(entry.id));
@@ -101,4 +139,60 @@ export async function executeDiskCleanup(planId: string, fileIds: string[]): Pro
   const now = new Date().toISOString();
   addDemoCleanupHistory({ permanent_delete: true, id: `disk-history-${Date.now()}`, plan_id: planId, started_at: now, finished_at: now, selected_rules: current.groups.filter(group => group.entries.some(entry => fileIds.includes(entry.id))).map(({id,title}) => ({id,title})), status: 'completed', ...result, message: '全盘检查 · 浏览器演示记录，仅在当前页面中保留。' });
   return result;
+}
+
+export interface DiskCleanupExecution {
+  drive_ids?: string[];
+  plan_id: string;
+  status: 'running' | 'completed' | 'failed';
+  total_files: number;
+  processed_files: number;
+  batch: number;
+  deleted_files: number;
+  deleted_bytes: number;
+  result: CacheResult | null;
+  error: string | null;
+}
+const demoDeletedGroups = new Set<string>();
+if (!isTauri) {
+  try { for (const id of JSON.parse(sessionStorage.getItem('pinkbin.demo.deleted-groups.v1') || '[]')) if (typeof id === 'string') demoDeletedGroups.add(id); } catch { /* Invalid demo state is ignored. */ }
+}
+const demoExecutionKey = 'pinkbin-demo-cleanup-execution';
+type DemoExecution = { job: DiskCleanupExecution; readyAt: number; groups: { id: string; title: string }[]; bytes: number };
+function readDemoExecution(): DemoExecution | null {
+  try { return JSON.parse(sessionStorage.getItem(demoExecutionKey) || 'null'); } catch { return null; }
+}
+function saveDemoExecution(execution: DemoExecution) {
+  try { sessionStorage.setItem(demoExecutionKey, JSON.stringify(execution)); } catch { /* 当前页面仍可显示清理结果。 */ }
+  demoExecution = execution;
+}
+let demoExecution: DemoExecution | null = isTauri ? null : readDemoExecution();
+export async function getDiskCleanupExecution(): Promise<DiskCleanupExecution | null> {
+  if (isTauri) return invoke('get_disk_cleanup_execution');
+  if (!demoExecution) return null;
+  if (demoExecution.job.status === 'running' && Date.now() >= demoExecution.readyAt) {
+    const current = demoExecution;
+    const result: CacheResult = { deleted_files: current.job.total_files, deleted_bytes: current.bytes, skipped_files: 0, failed_files: 0, messages: ['DEMO：仅模拟删除推荐项目，没有读取或更改本机文件。'], log_path: '' };
+    const now = new Date().toISOString();
+    saveDemoExecution({ ...current, job: { ...current.job, status: 'completed', processed_files: current.job.total_files, deleted_files: result.deleted_files, deleted_bytes: result.deleted_bytes, result } });
+    addDemoCleanupHistory({ permanent_delete: true, id: `quick-history-${current.job.plan_id}`, plan_id: current.job.plan_id, started_at: now, finished_at: now, selected_rules: current.groups, status: 'completed', ...result, message: '便捷清理 · 浏览器演示记录' });
+  }
+  return demoExecution.job;
+}
+export async function executeRecommendedCleanup(planId: string, selectedGroupIds: string[]): Promise<DiskCleanupExecution> {
+  if (isTauri) return invoke('execute_recommended_cleanup', { planId, selectedGroupIds });
+  const current = demoPlan;
+  if (!current || current.plan_id !== planId || !current.recommended?.file_count) throw new Error('便捷清理项目已失效，请重新检查。');
+  const selected = new Set(selectedGroupIds);
+  const available = new Set(current.recommended.groups.map(group => group.id));
+  if (!selected.size || selected.size !== selectedGroupIds.length || [...selected].some(id => !available.has(id))) throw new Error('请选择有效的便捷清理项目');
+  const groups = current.recommended.groups.filter(group => selected.has(group.id));
+  const driveIds = demoSession?.session.drive_ids ?? [];
+  for (const id of selected) demoDeletedGroups.add(id);
+  try { sessionStorage.setItem('pinkbin.demo.deleted-groups.v1', JSON.stringify([...demoDeletedGroups])); } catch { /* Current page retains the simulated deletion. */ }
+  demoPlan = null; saveDemoSession(null);
+  invalidateDemoInventory();
+  const job: DiskCleanupExecution = { drive_ids: driveIds, plan_id: planId, status: 'running', total_files: groups.reduce((sum, group) => sum + group.file_count, 0), processed_files: 0, batch: 1, deleted_files: 0, deleted_bytes: 0, result: null, error: null };
+  saveDemoExecution({ job, readyAt: Date.now() + 650, bytes: groups.reduce((sum, group) => sum + group.bytes, 0), groups: groups.map(group => ({ id: group.id, title: group.title })) });
+  return job;
 }

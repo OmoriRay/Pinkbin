@@ -150,11 +150,9 @@ pub async fn advise(provider: &Provider, req: &AdvisorRequest) -> anyhow::Result
             if text.trim().is_empty() {
                 let stop = v["stop_reason"].as_str().unwrap_or("unknown");
                 if stop == "max_tokens" {
-                    anyhow::bail!(
-                        "anthropic: 没拿到 text block (stop_reason=max_tokens) — 模型在 thinking 阶段被截断, 把 max_tokens 调大重试"
-                    );
+                    anyhow::bail!("AI 已达到输出上限，未返回正文。请重试或更换模型。");
                 }
-                anyhow::bail!("anthropic: 没拿到 text block (stop_reason={stop})");
+                anyhow::bail!("AI 未返回正文（停止原因：{stop}）");
             }
             text
         }

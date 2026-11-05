@@ -244,9 +244,13 @@ export const SCAFFOLDS: Scaffold[] = [
   },
 ];
 
-export async function scan(_path: string): Promise<Node> {
-  await wait(800);
-  return JSON.parse(JSON.stringify(MOCK_TREE));
+export async function scan(path: string, immediate = false): Promise<Node> {
+  if (!immediate) await wait(800);
+  const tree: Node = JSON.parse(JSON.stringify(MOCK_TREE));
+  const prefix = path.endsWith('\\') ? path : `${path}\\`;
+  const remap = (node: Node) => { node.path = prefix + node.path.slice(3); node.children.forEach(remap); };
+  remap(tree); tree.name = path; tree.path = path;
+  return tree;
 }
 
 export async function detectScaffold(path: string): Promise<string | null> {

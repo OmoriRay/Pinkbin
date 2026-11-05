@@ -2756,7 +2756,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pinkbin-advisor"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -2769,9 +2769,10 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-desktop"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "globset",
@@ -2785,6 +2786,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha1",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -2803,7 +2805,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-executor"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2816,7 +2818,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scaffold"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "globset",
@@ -2829,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scaffold-lint"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "pinkbin-scaffold",
@@ -2838,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-scanner"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "jwalk",
@@ -2853,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "pinkbin-steam-inspector"
-version = "0.4.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -3793,6 +3795,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
 ]
 
 [[package]]

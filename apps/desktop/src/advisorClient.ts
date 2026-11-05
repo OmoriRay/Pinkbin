@@ -152,9 +152,9 @@ function extractAnthropicText(data: unknown): string {
   if (!text) {
     const stop = d?.stop_reason ?? 'unknown';
     if (stop === 'max_tokens') {
-      throw new Error('AI 在 thinking 阶段被截断（max_tokens 太小，思考把额度吃光了）。把 max_tokens 调大重试。');
+      throw new Error('AI 已达到输出上限，未返回正文。请重试或更换模型。');
     }
-    throw new Error(`Anthropic: 没拿到 text block（stop_reason=${stop}）`);
+    throw new Error(`AI 未返回正文（停止原因：${stop}）`);
   }
   return text;
 }
@@ -244,7 +244,7 @@ export async function callAdvisor(
     raw = data?.message?.content ?? '';
   }
 
-  if (!raw) throw new Error('Empty response from advisor');
+  if (!raw) throw new Error('AI 返回了空内容，请重试或检查模型设置');
   return JSON.parse(stripCodeFence(raw)) as AdvisorResponse;
 }
 
@@ -314,7 +314,7 @@ export async function freeChat(
 async function runChatRaw(system: string, user: string, images?: ChatImage[], settingsOverride?: AdvisorSettings): Promise<string> {
   const settings = settingsOverride ?? loadSettings();
   if (!isConfigured(settings)) {
-    throw new Error('AI 未配置 — 在右上角的设置里填一个 API key');
+    throw new Error('AI 未配置，请先打开右上角 AI 设置');
   }
   const fullUser = user;
   const imgs = images ?? [];

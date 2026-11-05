@@ -81,4 +81,5 @@ PinkbinData/
 qa/
 *.local.json
 **/.portable-ready-v1
+.pinkbin-instance-v1.json
 apps/desktop/src-tauri/examples/connection_probe.rs

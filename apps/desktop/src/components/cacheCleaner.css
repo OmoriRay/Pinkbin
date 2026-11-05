@@ -135,6 +135,13 @@
 .cc-text:hover:not(:disabled) { color: var(--pink-deep); }
 .cc-text:disabled { opacity: .4; cursor: default; }
 .cc-dialog :is(button, input, summary):focus-visible, .cache-cleaner-trigger:focus-visible { outline: 3px solid var(--pink-deep); outline-offset: 4px; }
+/* Checkboxes stay still; text-input lift and shadows do not fit these small controls. */
+.cc-dialog input[type="checkbox"], .cc-dialog input[type="checkbox"]:focus {
+  padding: 0;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+}
 .cc-result { text-align: center; padding: 12px 10px 20px; }
 .cc-current-result { padding: 16px 20px; margin-bottom: 20px; background: var(--mint); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); }
 .cc-current-result.cc-result-warning { background: #fff0c9; }
@@ -196,3 +203,7 @@
   .cc-spin, .cc-working > svg { animation: none; }
   .cc-rule, .cc-button { transition: none; }
 }
+
+.cc-heading h2:only-child { margin-bottom: 0; }
+.cc-footer > .cc-actions:only-child { margin-left: auto; }
+.cc-result-actions{display:flex;justify-content:center;margin:16px 0 4px}

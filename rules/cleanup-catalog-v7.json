@@ -1,0 +1,2306 @@
+{
+  "schema_version": 7,
+  "revision": "2026.10.30.7",
+  "license": "MIT",
+  "templates": {
+    "chromium_profile": [
+      "Cache/Cache_Data",
+      "Code Cache",
+      "GPUCache",
+      "DawnCache",
+      "DawnGraphiteCache",
+      "DawnWebGPUCache",
+      "Media Cache"
+    ],
+    "chromium_shared": [
+      "ShaderCache",
+      "GrShaderCache",
+      "GraphiteDawnCache",
+      "GPUPersistentCache"
+    ],
+    "electron_legacy": [
+      "Cache/Cache_Data",
+      "Code Cache",
+      "GPUCache",
+      "DawnGraphiteCache",
+      "DawnWebGPUCache"
+    ],
+    "electron": [
+      "Cache/Cache_Data",
+      "Code Cache",
+      "GPUCache",
+      "DawnCache",
+      "DawnGraphiteCache",
+      "DawnWebGPUCache",
+      "CachedData"
+    ]
+  },
+  "policies": {
+    "temp": {
+      "min_age_days": 30,
+      "app": "",
+      "processes": []
+    },
+    "dumps": {
+      "min_age_days": 30,
+      "app": "",
+      "processes": []
+    },
+    "pip": {
+      "min_age_days": 30,
+      "app": "Python / pip",
+      "processes": [
+        "python.exe",
+        "pythonw.exe",
+        "python3.exe",
+        "pypy.exe",
+        "pypy3.exe"
+      ]
+    },
+    "npm": {
+      "min_age_days": 30,
+      "app": "Node.js / npm",
+      "processes": [
+        "node.exe"
+      ]
+    },
+    "python": {
+      "min_age_days": 7,
+      "app": "Python",
+      "processes": [
+        "python.exe",
+        "pythonw.exe",
+        "python3.exe",
+        "pypy.exe",
+        "pypy3.exe"
+      ]
+    },
+    "rust": {
+      "min_age_days": 30,
+      "app": "Rust 编译工具",
+      "processes": [
+        "rustc.exe",
+        "cargo.exe",
+        "rust-analyzer.exe"
+      ]
+    },
+    "nuget": {
+      "min_age_days": 30,
+      "app": "NuGet / .NET",
+      "processes": [
+        "dotnet.exe",
+        "NuGet.exe",
+        "MSBuild.exe",
+        "devenv.exe"
+      ]
+    },
+    "reports": {
+      "min_age_days": 30,
+      "app": "Windows 错误报告",
+      "processes": [
+        "WerFault.exe",
+        "WerFaultSecure.exe",
+        "wermgr.exe"
+      ]
+    },
+    "logs": {
+      "min_age_days": 30,
+      "app": "",
+      "processes": []
+    },
+    "cargo": {
+      "min_age_days": 30,
+      "app": "Cargo",
+      "processes": [
+        "cargo.exe",
+        "rustc.exe",
+        "rust-analyzer.exe"
+      ]
+    },
+    "installer-residue": {
+      "min_age_days": 30,
+      "app": "安装与解压工具",
+      "processes": [
+        "setup.exe",
+        "msiexec.exe",
+        "7z.exe",
+        "7zG.exe",
+        "7zFM.exe",
+        "WinRAR.exe",
+        "unins000.exe"
+      ]
+    },
+    "system-logs": {
+      "min_age_days": 30,
+      "app": "Windows 维护工具",
+      "processes": [
+        "TiWorker.exe",
+        "TrustedInstaller.exe",
+        "dism.exe",
+        "DismHost.exe",
+        "sfc.exe"
+      ]
+    },
+    "hf-xet": {
+      "min_age_days": 45,
+      "app": "Hugging Face Xet",
+      "processes": [
+        "python.exe",
+        "pythonw.exe",
+        "python3.exe",
+        "pypy.exe",
+        "pypy3.exe",
+        "hf.exe",
+        "huggingface-cli.exe",
+        "hf-xet.exe",
+        "git.exe",
+        "git-lfs.exe"
+      ]
+    },
+    "hf-partial": {
+      "min_age_days": 30,
+      "app": "Hugging Face 下载残片",
+      "processes": [
+        "python.exe",
+        "pythonw.exe",
+        "python3.exe",
+        "pypy.exe",
+        "pypy3.exe",
+        "hf.exe",
+        "huggingface-cli.exe",
+        "hf-xet.exe",
+        "git.exe",
+        "git-lfs.exe"
+      ]
+    }
+  },
+  "legacy": [
+    {
+      "id": "temp",
+      "app": "",
+      "title": "用户临时文件",
+      "family": "temp",
+      "prefix": "Temp",
+      "min_age_days": 7,
+      "processes": []
+    },
+    {
+      "id": "chrome",
+      "app": "Chrome",
+      "title": "Chrome 缓存",
+      "family": "chromium",
+      "prefix": "Google/Chrome/User Data",
+      "min_age_days": 0,
+      "processes": [
+        "chrome.exe"
+      ]
+    },
+    {
+      "id": "edge",
+      "app": "Edge",
+      "title": "Edge 缓存",
+      "family": "chromium",
+      "prefix": "Microsoft/Edge/User Data",
+      "min_age_days": 0,
+      "processes": [
+        "msedge.exe"
+      ]
+    },
+    {
+      "id": "brave",
+      "app": "Brave",
+      "title": "Brave 缓存",
+      "family": "chromium",
+      "prefix": "BraveSoftware/Brave-Browser/User Data",
+      "min_age_days": 0,
+      "processes": [
+        "brave.exe"
+      ]
+    },
+    {
+      "id": "firefox",
+      "app": "Firefox",
+      "title": "Firefox 缓存",
+      "family": "firefox",
+      "prefix": "Mozilla/Firefox/Profiles",
+      "min_age_days": 0,
+      "processes": [
+        "firefox.exe"
+      ]
+    },
+    {
+      "id": "pip-cache",
+      "app": "Python 和 pip",
+      "title": "Python 下载缓存",
+      "family": "pip",
+      "prefix": "pip/Cache",
+      "min_age_days": 30,
+      "processes": [
+        "python.exe",
+        "pythonw.exe",
+        "python3.exe",
+        "py.exe",
+        "pip.exe",
+        "pip3.exe"
+      ]
+    },
+    {
+      "id": "npm-cache",
+      "app": "",
+      "title": "npm 下载缓存",
+      "family": "npm",
+      "prefix": "npm-cache",
+      "min_age_days": 30,
+      "processes": []
+    },
+    {
+      "id": "nvidia-shader",
+      "app": "",
+      "title": "NVIDIA 缓存空间参考",
+      "family": "shader",
+      "prefix": "NVIDIA",
+      "min_age_days": 0,
+      "processes": []
+    },
+    {
+      "id": "crash-dumps",
+      "app": "",
+      "title": "崩溃转储",
+      "family": "dumps",
+      "prefix": "CrashDumps",
+      "min_age_days": 30,
+      "processes": []
+    },
+    {
+      "id": "cherry-studio-cache",
+      "app": "Cherry Studio",
+      "title": "Cherry Studio 缓存",
+      "family": "electron",
+      "prefix": "CherryStudio",
+      "min_age_days": 0,
+      "processes": [
+        "Cherry Studio.exe",
+        "CherryStudio.exe"
+      ]
+    },
+    {
+      "id": "chatbox-cache",
+      "app": "Chatbox",
+      "title": "Chatbox 缓存",
+      "family": "electron",
+      "prefix": "xyz.chatboxapp.app",
+      "min_age_days": 0,
+      "processes": [
+        "Chatbox.exe",
+        "Chatbox CE.exe"
+      ]
+    },
+    {
+      "id": "lx-music-cache",
+      "app": "洛雪音乐",
+      "title": "洛雪音乐缓存",
+      "family": "electron",
+      "prefix": "lx-music-desktop",
+      "min_age_days": 0,
+      "processes": [
+        "lx-music-desktop.exe"
+      ]
+    },
+    {
+      "id": "docker-desktop-cache",
+      "app": "Docker Desktop",
+      "title": "Docker Desktop 缓存",
+      "family": "electron",
+      "prefix": "Docker Desktop",
+      "min_age_days": 0,
+      "processes": [
+        "Docker Desktop.exe"
+      ]
+    },
+    {
+      "id": "opencode-cache",
+      "app": "OpenCode",
+      "title": "OpenCode 缓存",
+      "family": "electron",
+      "prefix": "ai.opencode.desktop",
+      "min_age_days": 0,
+      "processes": [
+        "OpenCode.exe"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "app-code",
+      "app": "Visual Studio Code",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Code"
+        }
+      ],
+      "processes": [
+        "Code.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-code-insiders",
+      "app": "Visual Studio Code Insiders",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Code - Insiders"
+        }
+      ],
+      "processes": [
+        "Code - Insiders.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-vscodium",
+      "app": "VSCodium",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "VSCodium"
+        }
+      ],
+      "processes": [
+        "VSCodium.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-cursor",
+      "app": "Cursor",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Cursor"
+        }
+      ],
+      "processes": [
+        "Cursor.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-windsurf",
+      "app": "Windsurf",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Windsurf"
+        }
+      ],
+      "processes": [
+        "Windsurf.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-discord",
+      "app": "Discord",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "discord"
+        }
+      ],
+      "processes": [
+        "Discord.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-slack",
+      "app": "Slack",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Slack"
+        }
+      ],
+      "processes": [
+        "Slack.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "jetbrains-intellijidea",
+      "app": "IntelliJ IDEA",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "idea64.exe",
+        "idea.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "IntelliJIdea",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-ideaic",
+      "app": "IntelliJ IDEA Community",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "idea64.exe",
+        "idea.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "IdeaIC",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-pycharm",
+      "app": "PyCharm",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "pycharm64.exe",
+        "pycharm.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "PyCharm",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-pycharmce",
+      "app": "PyCharm Community",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "pycharm64.exe",
+        "pycharm.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "PyCharmCE",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-webstorm",
+      "app": "WebStorm",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "webstorm64.exe",
+        "webstorm.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "WebStorm",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-clion",
+      "app": "CLion",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "clion64.exe",
+        "clion.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "CLion",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-rider",
+      "app": "Rider",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "rider64.exe",
+        "rider.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "Rider",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-goland",
+      "app": "GoLand",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "goland64.exe",
+        "goland.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "GoLand",
+      "maintenance": []
+    },
+    {
+      "id": "jetbrains-rustrover",
+      "app": "RustRover",
+      "family": "jetbrains",
+      "locations": [
+        {
+          "root": "local",
+          "path": "JetBrains"
+        }
+      ],
+      "processes": [
+        "rustrover64.exe",
+        "rustrover.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.jetbrains.com/help/idea/directories-used-by-the-ide-to-store-settings-caches-plugins-and-logs.html"
+      ],
+      "product_prefix": "RustRover",
+      "maintenance": []
+    },
+    {
+      "id": "epic-web",
+      "app": "Epic Games Launcher",
+      "family": "epic",
+      "locations": [
+        {
+          "root": "local",
+          "path": "EpicGamesLauncher/Saved"
+        }
+      ],
+      "processes": [
+        "EpicGamesLauncher.exe",
+        "EpicWebHelper.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.epicgames.com/help/en-US/c-Category_EpicAccounts/c-TechnicalSupport_GeneralSupport/a000086158"
+      ],
+      "maintenance": []
+    },
+    {
+      "id": "vivaldi",
+      "app": "Vivaldi",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Vivaldi/User Data"
+        }
+      ],
+      "processes": [
+        "vivaldi.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://help.vivaldi.com/desktop/privacy/preventing-vivaldi-profiles-from-being-uploaded-to-git-repositories/",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "obsidian-web",
+      "app": "Obsidian",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Obsidian"
+        }
+      ],
+      "processes": [
+        "Obsidian.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://obsidian.md/help/data-storage",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "notion-web",
+      "app": "Notion",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Notion"
+        }
+      ],
+      "processes": [
+        "Notion.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "sources": [
+        "https://www.notion.com/en-gb/help/reset-notion",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "partitions": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-cherry-partitions",
+      "app": "Cherry Studio",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "CherryStudio"
+        }
+      ],
+      "processes": [
+        "Cherry Studio.exe",
+        "CherryStudio.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated",
+        "cherry-daily"
+      ]
+    },
+    {
+      "id": "app-chatbox-partitions",
+      "app": "Chatbox",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "xyz.chatboxapp.app"
+        }
+      ],
+      "processes": [
+        "Chatbox.exe",
+        "Chatbox CE.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-lx-partitions",
+      "app": "洛雪音乐",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "lx-music-desktop"
+        }
+      ],
+      "processes": [
+        "lx-music-desktop.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-adrive",
+      "app": "阿里云盘",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "aDrive"
+        }
+      ],
+      "processes": [
+        "aDrive.exe",
+        "AliyunDrive.exe",
+        "alipan.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-baidunetdisk",
+      "app": "百度网盘",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "baidunetdisk"
+        }
+      ],
+      "processes": [
+        "BaiduNetdisk.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-123pan",
+      "app": "123云盘",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "123pan"
+        }
+      ],
+      "processes": [
+        "123pan.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-claude",
+      "app": "Claude",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Claude"
+        },
+        {
+          "root": "local",
+          "path": "Claude-3p"
+        },
+        {
+          "root": "roaming",
+          "path": "Claude"
+        },
+        {
+          "root": "roaming",
+          "path": "Claude-3p"
+        }
+      ],
+      "processes": [
+        "Claude.exe",
+        "Claude-3p.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-codex-browser",
+      "app": "Codex 网页缓存",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Codex/web/Codex"
+        }
+      ],
+      "processes": [
+        "Codex.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "app-quark",
+      "app": "夸克",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Quark/User Data"
+        }
+      ],
+      "processes": [
+        "Quark.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "webview-ccswitch",
+      "app": "CC Switch",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "com.ccswitch.desktop/EBWebView"
+        },
+        {
+          "root": "roaming",
+          "path": "com.ccswitch.desktop/EBWebView"
+        }
+      ],
+      "processes": [
+        "cc-switch.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "webview-cockpit",
+      "app": "Cockpit Tools",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "com.jlcodes.cockpit-tools/EBWebView"
+        },
+        {
+          "root": "roaming",
+          "path": "com.jlcodes.cockpit-tools/EBWebView"
+        }
+      ],
+      "processes": [
+        "cockpit-tools.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "webview-motrix",
+      "app": "Motrix Next",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "com.motrix.next/EBWebView"
+        },
+        {
+          "root": "roaming",
+          "path": "com.motrix.next/EBWebView"
+        }
+      ],
+      "processes": [
+        "Motrix Next.exe",
+        "motrix-next.exe",
+        "motrix.exe",
+        "Motrix.Next.exe",
+        "com.motrix.next.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "webview-clash-verge",
+      "app": "Clash Verge",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "io.github.clash-verge-rev.clash-verge-rev/EBWebView"
+        },
+        {
+          "root": "roaming",
+          "path": "io.github.clash-verge-rev.clash-verge-rev/EBWebView"
+        }
+      ],
+      "processes": [
+        "clash-verge.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "webview-ollama",
+      "app": "Ollama",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "ollama app.exe/EBWebView"
+        },
+        {
+          "root": "roaming",
+          "path": "ollama app.exe/EBWebView"
+        }
+      ],
+      "processes": [
+        "ollama app.exe",
+        "ollama.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "cinebench-render",
+      "app": "Cinebench",
+      "family": "cinebench",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "MAXON"
+        }
+      ],
+      "processes": [
+        "Cinebench.exe",
+        "Cinebench2024.exe",
+        "Cinebench2026.exe"
+      ],
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**",
+        "**/sync_drive_app/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.maxon.net/en/tech-info-cinebench",
+        "https://help.maxon.net/c4d/s26/en-us/Content/_REDSHIFT_/html/Redshift%2BPreferences.html"
+      ],
+      "maintenance": []
+    },
+    {
+      "id": "app-default-chrome",
+      "app": "Chrome",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Google/Chrome/User Data"
+        }
+      ],
+      "processes": [
+        "chrome.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "app-default-edge",
+      "app": "Edge",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Microsoft/Edge/User Data"
+        }
+      ],
+      "processes": [
+        "msedge.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "app-default-brave",
+      "app": "Brave",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "BraveSoftware/Brave-Browser/User Data"
+        }
+      ],
+      "processes": [
+        "brave.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "app-default-firefox",
+      "app": "Firefox",
+      "family": "firefox",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Mozilla/Firefox/Profiles"
+        }
+      ],
+      "processes": [
+        "firefox.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": false,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session"
+      ],
+      "maintenance": []
+    },
+    {
+      "id": "app-docker-ui",
+      "app": "Docker Desktop",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Docker Desktop"
+        }
+      ],
+      "processes": [
+        "Docker Desktop.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "app-opencode-ui",
+      "app": "OpenCode",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "ai.opencode.desktop"
+        }
+      ],
+      "processes": [
+        "OpenCode.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/LocalHistory/**",
+        "**/Backups/**",
+        "**/User/**"
+      ],
+      "markers_any": [],
+      "logs": true,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "qq-ui",
+      "app": "QQ",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "QQ"
+        }
+      ],
+      "processes": [
+        "QQ.exe",
+        "QQNT.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated",
+        "qq-launcher"
+      ]
+    },
+    {
+      "id": "qqex-ui",
+      "app": "QQ 扩展界面",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "QQEX"
+        }
+      ],
+      "processes": [
+        "QQ.exe",
+        "QQNT.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "musicfree-ui",
+      "app": "MusicFree",
+      "family": "electron",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "MusicFree"
+        }
+      ],
+      "processes": [
+        "MusicFree.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://www.electronjs.org/docs/latest/api/session",
+        "https://www.electronjs.org/docs/latest/api/crash-reporter"
+      ],
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "wegame-ui",
+      "app": "WeGame",
+      "family": "wegame",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "Tencent/WeGame"
+        }
+      ],
+      "processes": [
+        "WeGame.exe",
+        "TGP.exe",
+        "TGPWebKit.exe",
+        "qbcore_cache_browser.exe"
+      ],
+      "min_age_days": 0,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Media Cache/**",
+        "**/Backups/**",
+        "**/User/**",
+        "**/Downloads/**"
+      ],
+      "markers_any": [],
+      "logs": false,
+      "partitions": true,
+      "sources": [
+        "https://bitbucket.org/chromiumembedded/cef/wiki/GeneralUsage"
+      ],
+      "maintenance": []
+    },
+    {
+      "id": "steam-web",
+      "app": "Steam",
+      "family": "chromium",
+      "locations": [
+        {
+          "root": "local",
+          "path": "Steam/htmlcache"
+        }
+      ],
+      "processes": [
+        "steam.exe",
+        "steamwebhelper.exe"
+      ],
+      "min_age_days": 7,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [
+        "**/Cookies/**",
+        "**/Login Data/**",
+        "**/Local Storage/**",
+        "**/IndexedDB/**",
+        "**/Service Worker/**"
+      ],
+      "markers_any": [
+        "Local State"
+      ],
+      "logs": false,
+      "maintenance": [],
+      "partitions": false,
+      "sources": [
+        "https://github.com/ValveSoftware/SteamOS/wiki/Troubleshooting",
+        "https://github.com/chromiumembedded/cef/blob/master/include/internal/cef_types.h"
+      ],
+      "product_prefix": null
+    },
+    {
+      "id": "obs-logs",
+      "app": "OBS Studio",
+      "family": "diagnostics",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "obs-studio"
+        }
+      ],
+      "processes": [
+        "obs64.exe",
+        "obs32.exe"
+      ],
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [],
+      "markers_any": [
+        "global.ini"
+      ],
+      "logs": false,
+      "maintenance": [
+        "obs-session"
+      ],
+      "partitions": false,
+      "sources": [
+        "https://github.com/obsproject/obs-studio/blob/master/frontend/obs-main.cpp"
+      ],
+      "product_prefix": null
+    },
+    {
+      "id": "stability-logs",
+      "app": "Stability Matrix",
+      "family": "diagnostics",
+      "locations": [
+        {
+          "root": "roaming",
+          "path": "StabilityMatrix"
+        }
+      ],
+      "processes": [
+        "StabilityMatrix.exe",
+        "StabilityMatrix.Avalonia.exe"
+      ],
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [],
+      "markers_any": [
+        "global.json"
+      ],
+      "logs": false,
+      "maintenance": [
+        "stability-archive"
+      ],
+      "partitions": false,
+      "sources": [
+        "https://github.com/LykosAI/StabilityMatrix/blob/87dced77c1980e73c467dfac67009a94a9aa3d90/StabilityMatrix.Avalonia/Logging/LogFileTarget.cs"
+      ],
+      "product_prefix": null
+    },
+    {
+      "id": "unreal-crash-logs",
+      "app": "Unreal 崩溃报告器",
+      "family": "diagnostics",
+      "locations": [
+        {
+          "root": "local",
+          "path": "CrashReportClient"
+        }
+      ],
+      "processes": [
+        "CrashReportClient.exe",
+        "CrashReportClientEditor.exe",
+        "CrashReportClient-Win64-Shipping.exe"
+      ],
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "exclude": [],
+      "markers_any": [
+        "Saved/Config/Windows/Engine.ini",
+        "Saved/Config/WindowsEditor/Engine.ini"
+      ],
+      "logs": false,
+      "maintenance": [
+        "unreal-backup"
+      ],
+      "partitions": false,
+      "sources": [
+        "https://dev.epicgames.com/documentation/unreal-engine/logging-in-unreal-engine"
+      ],
+      "product_prefix": null
+    }
+  ],
+  "portable_editors": [
+    {
+      "id": "portable-code",
+      "app": "Visual Studio Code",
+      "executable": "Code.exe",
+      "processes": [
+        "Code.exe"
+      ]
+    },
+    {
+      "id": "portable-codium",
+      "app": "VSCodium",
+      "executable": "VSCodium.exe",
+      "processes": [
+        "VSCodium.exe"
+      ]
+    }
+  ],
+  "portable_browsers": [
+    {
+      "id": "portable-chrome",
+      "app": "独立 Chrome",
+      "executable": "chrome.exe",
+      "processes": [
+        "chrome.exe"
+      ]
+    },
+    {
+      "id": "portable-edge",
+      "app": "独立 Edge",
+      "executable": "msedge.exe",
+      "processes": [
+        "msedge.exe"
+      ]
+    },
+    {
+      "id": "portable-brave",
+      "app": "独立 Brave",
+      "executable": "brave.exe",
+      "processes": [
+        "brave.exe"
+      ]
+    },
+    {
+      "id": "portable-vivaldi",
+      "app": "独立 Vivaldi",
+      "executable": "vivaldi.exe",
+      "processes": [
+        "vivaldi.exe"
+      ]
+    }
+  ],
+  "portable_apps": [
+    {
+      "id": "portable-cherry",
+      "app": "便携 Cherry Studio",
+      "executable": "Cherry Studio.exe",
+      "processes": [
+        "Cherry Studio.exe",
+        "CherryStudio.exe"
+      ],
+      "family": "electron",
+      "data_dirs": [
+        "data",
+        "user-data"
+      ],
+      "markers_any": [
+        "resources/app.asar",
+        "resources/app/package.json"
+      ],
+      "partitions": true,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated",
+        "cherry-daily"
+      ]
+    },
+    {
+      "id": "portable-chatbox",
+      "app": "便携 Chatbox",
+      "executable": "Chatbox.exe",
+      "processes": [
+        "Chatbox.exe",
+        "Chatbox CE.exe"
+      ],
+      "family": "electron",
+      "data_dirs": [
+        "data",
+        "user-data"
+      ],
+      "markers_any": [
+        "resources/app.asar",
+        "resources/app/package.json"
+      ],
+      "partitions": true,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "portable-webview-ccswitch",
+      "app": "便携 CC Switch",
+      "executable": "cc-switch.exe",
+      "processes": [
+        "cc-switch.exe"
+      ],
+      "family": "chromium",
+      "data_dirs": [
+        "cc-switch.exe.WebView2/EBWebView",
+        "data/EBWebView",
+        "data"
+      ],
+      "markers_any": [],
+      "partitions": false,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "portable-webview-cockpit",
+      "app": "便携 Cockpit Tools",
+      "executable": "cockpit-tools.exe",
+      "processes": [
+        "cockpit-tools.exe"
+      ],
+      "family": "chromium",
+      "data_dirs": [
+        "cockpit-tools.exe.WebView2/EBWebView",
+        "data/EBWebView",
+        "data"
+      ],
+      "markers_any": [],
+      "partitions": false,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "portable-webview-motrix",
+      "app": "便携 Motrix Next",
+      "executable": "motrix-next.exe",
+      "processes": [
+        "motrix-next.exe"
+      ],
+      "family": "chromium",
+      "data_dirs": [
+        "motrix-next.exe.WebView2/EBWebView",
+        "data/EBWebView",
+        "data"
+      ],
+      "markers_any": [],
+      "partitions": false,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad"
+      ]
+    },
+    {
+      "id": "portable-musicfree",
+      "app": "MusicFree",
+      "executable": "MusicFree.exe",
+      "processes": [
+        "MusicFree.exe"
+      ],
+      "family": "electron",
+      "data_dirs": [
+        "portable/userData"
+      ],
+      "markers_any": [
+        "resources/app/package.json",
+        "resources/app.asar"
+      ],
+      "partitions": true,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": [
+        "crashpad",
+        "electron-rotated"
+      ]
+    },
+    {
+      "id": "wallpaper-ui",
+      "app": "Wallpaper Engine",
+      "executable": "wallpaper64.exe",
+      "processes": [
+        "wallpaper64.exe",
+        "wallpaper32.exe",
+        "webwallpaper32.exe"
+      ],
+      "family": "wallpaper",
+      "data_dirs": [
+        "ui/uicache"
+      ],
+      "markers_any": [
+        "ui/index.html",
+        "ui/ui.pkg",
+        "version.json"
+      ],
+      "partitions": false,
+      "enabled": true,
+      "reviewed": true,
+      "maintenance": []
+    }
+  ],
+  "updater_caches": [
+    {
+      "id": "updater-cherry",
+      "profile_id": "app-cherry-partitions",
+      "directory": "cherrystudio-updater",
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "sources": [
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/app-builder-lib/templates/nsis/include/installer.nsh",
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/electron-updater/src/DownloadedUpdateHelper.ts"
+      ]
+    },
+    {
+      "id": "updater-123pan",
+      "profile_id": "app-123pan",
+      "directory": "123pan-updater",
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "sources": [
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/app-builder-lib/templates/nsis/include/installer.nsh",
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/electron-updater/src/DownloadedUpdateHelper.ts"
+      ]
+    },
+    {
+      "id": "updater-opencode",
+      "profile_id": "app-opencode-ui",
+      "directory": "@opencode-aidesktop-updater",
+      "min_age_days": 30,
+      "enabled": true,
+      "reviewed": true,
+      "sources": [
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/app-builder-lib/templates/nsis/include/installer.nsh",
+        "https://github.com/electron-userland/electron-builder/blob/master/packages/electron-updater/src/DownloadedUpdateHelper.ts"
+      ]
+    }
+  ]
+}

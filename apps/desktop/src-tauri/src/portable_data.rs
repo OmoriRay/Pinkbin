@@ -407,7 +407,7 @@ fn old_instance_running(exe: &Path) -> Result<bool, String> {
     }
 }
 
-fn pinkbin_executable_name(name: &str) -> bool {
+pub(crate) fn pinkbin_executable_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.starts_with("pinkbin") && name.ends_with(".exe")
 }

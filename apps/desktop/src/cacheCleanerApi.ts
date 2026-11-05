@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { invalidateDemoInventory } from './sharedScanDemo';
 import { isTauri } from './env';
 
 export interface CacheRule {
@@ -149,6 +150,7 @@ function createDemoPlan(): CachePlan {
 export async function executeCacheCleanup(planId: string, ruleIds: string[]): Promise<CacheResult> {
   if (isTauri) return invoke<CacheResult>('execute_cache_cleanup', { planId, ruleIds });
   if (!demoPlan || demoPlan.plan_id !== planId) throw new Error('演示预览已过期，请重新扫描。');
+  invalidateDemoInventory();
   const selected = demoPlan.rules.filter((rule) => ruleIds.includes(rule.id) && rule.status === 'ready');
   demoPlan = null; saveDemoSession(null);
   await delay();

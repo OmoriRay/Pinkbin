@@ -52,7 +52,14 @@ jobs:
           $tag = $env:RELEASE_TAG
           $zip = Get-ChildItem -LiteralPath release -Filter 'Pinkbin_*.zip' -File
           if (@($zip).Count -ne 1) { throw 'Expected exactly one portable ZIP' }
-          gh release view $tag --repo $repo *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Release already exists; refusing to replace published binaries' }
+          $existing = gh release view $tag --repo $repo --json assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $assets = @((($existing -join "`n") | ConvertFrom-Json).assets)
+            if ($assets.Count -ne 1 -or $assets[0].name -ne $zip.Name) {
+              throw 'Existing release does not contain the expected single ZIP; inspect it manually'
+            }
+            Write-Host 'Portable ZIP already published; preserving the existing binary.'
+            exit 0
+          }
           gh release create $tag $zip.FullName --repo $repo --verify-tag --title "Pinkbin $tag" --generate-notes --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

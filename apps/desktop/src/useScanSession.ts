@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { startScanSession, getScanSession, type ScanSession, type ScanStatsEvent } from './scanSessionApi';
 import { useStore } from './store';
+import { onSharedScanInvalidated } from './sharedScanEvents';
 
 export interface ScanDiag {
   backend: ScanStatsEvent | null;
@@ -31,13 +32,19 @@ export function useScanSession() {
     busy.current = session.status === 'running';
     setScanning(busy.current);
     setErr(session.error);
-    if (session.status === 'completed' && session.result && applied.current !== session.scan_id) {
-      applied.current = session.scan_id;
+    if (session.invalidated) {
+      applied.current = '';
+      useStore.setState(s => ({ root: null, rootKey: null, selectedPath: null, walkQueue: [], walkIndex: 0, chat: { ...s.chat, node: null, scaffoldId: null } }));
+    }
+    const key = session.result_key ?? session.scan_id;
+    if (session.status === 'completed' && session.result && applied.current !== key) {
+      applied.current = key;
       const start = performance.now();
-      useStore.getState().setRoot(session.result);
+      useStore.getState().setRoot(session.result, key);
       useStore.getState().selectPath(session.result.path);
       if (session.stats) setDiag({ backend: session.stats, ipcMs: null, scanCallMs: session.stats.cmd_total_ms, setRootMs: performance.now() - start, totalMs: session.stats.cmd_total_ms });
     }
+    if (session.status === 'completed' && session.stats) setDiag(current => ({ backend: session.stats!, ipcMs: null, scanCallMs: session.stats!.cmd_total_ms, setRootMs: current?.setRootMs ?? 0, totalMs: session.stats!.cmd_total_ms }));
   };
   const poll = async (token: number) => {
     try {
@@ -55,20 +62,26 @@ export function useScanSession() {
   useEffect(() => {
     alive.current = true;
     const token = ++generation.current;
+    let stop: (() => void) | undefined;
+    void onSharedScanInvalidated(() => {
+      if (!alive.current) return;
+      clearTimeout(timer.current);
+      void poll(generation.current);
+    }).then(unlisten => { if (alive.current) stop = unlisten; else unlisten(); });
     void poll(token);
-    return () => { alive.current = false; ++generation.current; clearTimeout(timer.current); };
+    return () => { alive.current = false; ++generation.current; clearTimeout(timer.current); stop?.(); };
     // The backend owns the job; effect cleanup only detaches this view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const scan = async () => {
+  const scan = async (force = false) => {
     if (busy.current || !pickedPath) return;
     busy.current = true;
     const token = ++generation.current;
     clearTimeout(timer.current);
     setScanning(true); setErr(null); setScanProgress(null); setDiag(null);
     try {
-      const session = await startScanSession(pickedPath);
+      const session = await startScanSession(pickedPath, force);
       if (!alive.current || token !== generation.current) return;
       apply(session);
       if (session.status === 'running') timer.current = setTimeout(() => void poll(token), 300);

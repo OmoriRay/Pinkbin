@@ -32,6 +32,7 @@ export interface ChatSession {
 
 interface AppState {
   root: Node | null;
+  rootKey: string | null;
   scaffolds: Scaffold[];
   selectedPath: string | null;
   walkQueue: WalkItem[];
@@ -41,7 +42,7 @@ interface AppState {
   chat: ChatSession;
   studioRequest: { scaffoldId: string; ts: number } | null;
 
-  setRoot: (n: Node | null) => void;
+  setRoot: (n: Node | null, key?: string) => void;
   setScaffolds: (s: Scaffold[]) => void;
   selectPath: (p: string | null) => void;
   setWalk: (q: WalkItem[]) => void;
@@ -61,6 +62,7 @@ interface AppState {
 
 export const useStore = create<AppState>((set) => ({
   root: null,
+  rootKey: null,
   scaffolds: [],
   selectedPath: null,
   walkQueue: [],
@@ -70,7 +72,7 @@ export const useStore = create<AppState>((set) => ({
   chat: { node: null, scaffoldId: null, turns: [], busy: false },
   studioRequest: null,
 
-  setRoot: (root) => set({ root }),
+  setRoot: (root, key) => set({ root, rootKey: root ? key ?? null : null }),
   setScaffolds: (scaffolds) => set({ scaffolds }),
   selectPath: (selectedPath) => set({ selectedPath }),
   setWalk: (walkQueue) => set({ walkQueue, walkIndex: 0 }),

@@ -4,7 +4,16 @@ mod cache_cleaner;
 mod cleanup_history;
 mod direct_delete;
 mod disk_cleaner;
+pub use disk_cleaner::readonly_audit;
+mod full_cleanup_rules;
+mod maintenance_rules;
 mod portable_data;
+mod rule_catalog;
+mod rule_probe;
+mod shared_scan;
+mod shared_tree;
+#[cfg(windows)]
+mod single_instance;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -88,29 +97,48 @@ struct ScanSession {
     result: Option<Arc<Node>>,
     error: Option<String>,
     stats: Option<ScanStatsEvent>,
+    epoch: u64,
+    invalidated: bool,
+    result_key: Option<String>,
 }
 
 #[derive(Default, Clone)]
 struct ScanSessionState(Arc<Mutex<Option<ScanSession>>>);
 
 #[tauri::command]
-fn get_scan_session(state: State<'_, ScanSessionState>) -> Result<Option<ScanSession>, String> {
-    Ok(state.0.lock().map_err(|e| e.to_string())?.clone())
+fn get_scan_session(
+    state: State<'_, ScanSessionState>,
+    disks: State<'_, disk_cleaner::DiskCleanerState>,
+) -> Result<Option<ScanSession>, String> {
+    let mut slot = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(s) = slot
+        .as_mut()
+        .filter(|s| s.status == "completed" && s.epoch != disk_cleaner::shared_epoch(disks.inner()))
+    {
+        s.status = "failed";
+        s.result = None;
+        s.invalidated = true;
+        s.error = Some("文件列表可能已变化，请重新扫描以更新".into());
+    }
+    Ok(slot.clone())
 }
-
 #[tauri::command]
 fn start_scan_session(
     app: AppHandle,
     state: State<'_, AppState>,
     sessions: State<'_, ScanSessionState>,
+    disks: State<'_, disk_cleaner::DiskCleanerState>,
     path: String,
+    force: Option<bool>,
 ) -> Result<ScanSession, String> {
-    let compiled = compile_all(&state.scaffolds.lock().map_err(|e| e.to_string())?.clone());
+    let compiled = Arc::new(compile_all(
+        &state.scaffolds.lock().map_err(|e| e.to_string())?.clone(),
+    ));
     let shared = sessions.inner().clone();
-    // Claim synchronously before scheduling work, closing duplicate-start races.
+    let disk_state = disks.inner().clone();
     let mut slot = shared.0.lock().map_err(|e| e.to_string())?;
-    if let Some(session) = slot.as_ref().filter(|s| s.status == "running") {
-        return Ok(session.clone());
+    if let Some(s) = slot.as_ref().filter(|s| s.status == "running") {
+        return Ok(s.clone());
     }
     let session = ScanSession {
         scan_id: format!(
@@ -124,6 +152,9 @@ fn start_scan_session(
         result: None,
         error: None,
         stats: None,
+        epoch: disk_cleaner::shared_epoch(&disk_state),
+        invalidated: false,
+        result_key: None,
     };
     *slot = Some(session.clone());
     drop(slot);
@@ -131,22 +162,67 @@ fn start_scan_session(
     tauri::async_runtime::spawn(async move {
         let worker_state = shared.clone();
         let worker_id = scan_id.clone();
-        let started = std::time::Instant::now();
+        let epoch_state = disk_state.clone();
         let outcome = tokio::task::spawn_blocking(move || {
+            let started = std::time::Instant::now();
+            let starting_epoch = disk_cleaner::shared_epoch(&disk_state);
+            let publish = |files_seen, bytes_seen, current_path: String| {
+                let event = ScanProgressEvent {
+                    scan_id: Some(worker_id.clone()),
+                    files_seen,
+                    bytes_seen,
+                    current_path,
+                };
+                if let Ok(mut slot) = worker_state.0.lock() {
+                    if let Some(s) = slot
+                        .as_mut()
+                        .filter(|s| s.scan_id == worker_id && s.status == "running")
+                    {
+                        s.progress = Some(event.clone());
+                    }
+                }
+                let _ = app.emit("scan-progress", event);
+            };
+            if let Some(shared_result) = disk_cleaner::shared_home_scan(
+                &app,
+                &disk_state,
+                Path::new(&path),
+                force.unwrap_or(false),
+                |p| publish(p.files, p.bytes, p.root),
+            )? {
+                let event = ScanStatsEvent {
+                    mode: if shared_result.reused {
+                        "shared_reuse".into()
+                    } else {
+                        "shared_walk".into()
+                    },
+                    mft_attempted: false,
+                    mft_succeeded: false,
+                    mft_ms: 0,
+                    walk_ms: if shared_result.reused {
+                        0
+                    } else {
+                        shared_result.elapsed_ms
+                    },
+                    build_tree_ms: 0,
+                    scanner_total_ms: shared_result.elapsed_ms,
+                    tag_ms: 0,
+                    cmd_total_ms: started.elapsed().as_millis() as u64,
+                    files_seen: shared_result.node.file_count,
+                    bytes_seen: shared_result.node.size,
+                    dirs_in_acc: 0,
+                };
+                let _ = app.emit("scan-stats", &event);
+                return Ok::<_, String>((
+                    shared_result.node,
+                    event,
+                    shared_result.epoch,
+                    Some(shared_result.result_key),
+                ));
+            }
             let (mut node, stats) =
                 scan_with_stats(PathBuf::from(path), ScanOptions::default(), |p| {
-                    let event = ScanProgressEvent {
-                        scan_id: Some(worker_id.clone()),
-                        files_seen: p.files_seen,
-                        bytes_seen: p.bytes_seen,
-                        current_path: p.current_path.clone(),
-                    };
-                    if let Ok(mut slot) = worker_state.0.lock() {
-                        if let Some(s) = slot.as_mut().filter(|s| s.scan_id == worker_id) {
-                            s.progress = Some(event.clone());
-                        }
-                    }
-                    let _ = app.emit("scan-progress", event);
+                    publish(p.files_seen, p.bytes_seen, p.current_path.clone())
                 })
                 .map_err(|e| e.to_string())?;
             let tagging = std::time::Instant::now();
@@ -157,22 +233,34 @@ fn start_scan_session(
                 &stats,
             ));
             let _ = app.emit("scan-stats", &event);
-            Ok::<_, String>((node, event))
+            Ok((Arc::new(node), event, starting_epoch, None))
         })
         .await
         .map_err(|e| format!("扫描任务异常：{e}"))
         .and_then(|r| r);
         if let Ok(mut slot) = shared.0.lock() {
-            if let Some(s) = slot.as_mut().filter(|s| s.scan_id == scan_id) {
+            if let Some(s) = slot
+                .as_mut()
+                .filter(|s| s.scan_id == scan_id && s.status == "running")
+            {
                 match outcome {
-                    Ok((node, stats)) => {
-                        s.result = Some(Arc::new(node));
+                    Ok((node, stats, epoch, key))
+                        if epoch == disk_cleaner::shared_epoch(&epoch_state) =>
+                    {
+                        s.result = Some(node);
                         s.stats = Some(stats);
+                        s.epoch = epoch;
+                        s.result_key = key;
                         s.status = "completed";
                     }
-                    Err(error) => {
-                        s.error = Some(error);
+                    Ok(_) => {
                         s.status = "failed";
+                        s.invalidated = true;
+                        s.error = Some("文件列表可能已变化，请重新扫描以更新".into());
+                    }
+                    Err(e) => {
+                        s.status = "failed";
+                        s.error = Some(e);
                     }
                 }
             }
@@ -192,6 +280,7 @@ struct AppState {
 async fn scan_path(
     app: AppHandle,
     state: State<'_, AppState>,
+    disks: State<'_, disk_cleaner::DiskCleanerState>,
     path: String,
 ) -> Result<Node, String> {
     let p = PathBuf::from(&path);
@@ -203,8 +292,27 @@ async fn scan_path(
     // Mutex across thread boundaries. The compiled form is `Send` and used by
     // the post-scan walk to fill `Node.scaffold_id`.
     let compiled = compile_all(&state.scaffolds.lock().unwrap().clone());
+    let disk_state = disks.inner().clone();
+    let shared_app = app.clone();
 
     let result = tokio::task::spawn_blocking(move || {
+        if let Some(result) =
+            disk_cleaner::shared_home_scan(&shared_app, &disk_state, &p, false, |_| {})
+                .map_err(anyhow::Error::msg)?
+        {
+            let stats = ScanStats {
+                mode: if result.reused {
+                    "shared_reuse".into()
+                } else {
+                    "shared_walk".into()
+                },
+                total_ms: result.elapsed_ms,
+                files_seen: result.node.file_count,
+                bytes_seen: result.node.size,
+                ..Default::default()
+            };
+            return Ok(((*result.node).clone(), stats, 0));
+        }
         let scan_result = scan_with_stats(p, ScanOptions::default(), |progress| {
             let _ = app_for_progress.emit(
                 "scan-progress",
@@ -763,6 +871,7 @@ async fn scope_sizes(
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // every arg is a distinct user-facing knob; bundling into a struct is just shuffling
 async fn execute_scope(
+    app: AppHandle,
     state: State<'_, AppState>,
     scaffold_id: String,
     scope_id: String,
@@ -772,6 +881,11 @@ async fn execute_scope(
     wxid_filter: Option<Vec<String>>,
     env_filter: Option<Vec<String>>,
 ) -> Result<Vec<UndoEntry>, String> {
+    let _lease = if dry_run {
+        None
+    } else {
+        Some(disk_cleaner::reserve_operation()?)
+    };
     let (scaffold, scope) = {
         let scaffolds = state.scaffolds.lock().unwrap();
         let sc = scaffolds
@@ -867,6 +981,9 @@ async fn execute_scope(
         paths: matched,
         reason: format!("Pinkbin scaffold {}/{} (Studio)", scaffold.id, scope.id),
     };
+    if !dry_run {
+        disk_cleaner::invalidate_shared_scan(&app);
+    }
     execute(&plan, dry_run, &state.undo_log, &state.quarantine_root).map_err(|e| e.to_string())
 }
 
@@ -1063,10 +1180,19 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn execute_plan(
+    app: AppHandle,
     state: State<'_, AppState>,
     plan: Plan,
     dry_run: bool,
 ) -> Result<Vec<UndoEntry>, String> {
+    let _lease = if dry_run {
+        None
+    } else {
+        Some(disk_cleaner::reserve_operation()?)
+    };
+    if !dry_run {
+        disk_cleaner::invalidate_shared_scan(&app);
+    }
     execute(&plan, dry_run, &state.undo_log, &state.quarantine_root).map_err(|e| e.to_string())
 }
 
@@ -1447,6 +1573,15 @@ fn set_advisor(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    let _instance = match single_instance::claim() {
+        Ok(Some(lease)) => lease,
+        Ok(None) => return,
+        Err(message) => {
+            startup_error(&message);
+            return;
+        }
+    };
     // Resolve and migrate before plugins read state or any WebView is created.
     let portable = match portable_data::initialize() {
         Ok(paths) => paths,
@@ -1555,8 +1690,10 @@ pub fn run() {
             disk_cleaner::preview_disk_cleanup,
             disk_cleaner::start_disk_cleanup_scan,
             disk_cleaner::get_disk_cleanup_scan,
+            disk_cleaner::get_disk_cleanup_execution,
             disk_cleaner::cancel_disk_cleanup_scan,
             disk_cleaner::execute_disk_cleanup,
+            disk_cleaner::execute_recommended_cleanup,
             cleanup_history::list_cleanup_history,
             scan_path,
             start_scan_session,

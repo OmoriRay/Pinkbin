@@ -813,6 +813,22 @@ footer {
 .settings-test:disabled { opacity: .6; cursor: wait; }
 .settings-test:focus-visible { outline: 2px solid var(--pink-deep); outline-offset: 2px; }
 .settings-test-result { color: var(--ink-2); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-test-result[data-state="success"] {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: var(--mint);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+.settings-test-result[data-state="success"] > svg { flex-shrink: 0; }
+.settings-test-result[data-state="success"] > div { min-width: 0; }
 .settings-test-result[data-state="error"] { padding-left: 7px; border-left: 2px solid var(--pink-deep); }
 .app-about { border-top: 2px solid var(--ink); padding-top: 12px; min-width: 0; }
 .app-about h2 { margin: 0 0 8px; font-size: 13px; font-weight: 900; }

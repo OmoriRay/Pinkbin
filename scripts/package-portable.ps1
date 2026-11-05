@@ -23,9 +23,10 @@ try {
     try {
         # An explicit file list excludes existing portable settings and caches.
         foreach ($file in @(
-            @{ Source=$Executable; Name="Pinkbin_$version.exe" },
+            @{ Source=$Executable; Name='Pinkbin.exe' },
             @{ Source=(Join-Path $repoRoot 'docs\PORTABLE_README.txt'); Name='使用说明.txt' },
-            @{ Source=(Join-Path $repoRoot 'LICENSE'); Name='LICENSE.txt' }
+            @{ Source=(Join-Path $repoRoot 'LICENSE'); Name='LICENSE.txt' },
+            @{ Source=(Join-Path $repoRoot 'rules\cleanup-catalog-v7.json'); Name='rules/cleanup-catalog-v7.json' }
         )) {
             $entry = $archive.CreateEntry($file.Name, [IO.Compression.CompressionLevel]::Optimal)
             $inputFile = [IO.File]::OpenRead($file.Source)

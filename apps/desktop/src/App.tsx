@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Brush, Folder, ScanLine, Settings as SettingsIcon } from 'lucide-react';
+import { Brush, Folder, RefreshCw, ScanLine, Settings as SettingsIcon } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { isTauri } from './env';
 import { useStore } from './store';
@@ -83,9 +83,10 @@ export default function App() {
         <button className="ghost directory-picker" onClick={pickDirectory} disabled={scanning || restoring} title={pickedPath || '选择磁盘或文件夹'}>
           <Folder size={14} /><span>{pickedPath || '选择磁盘或文件夹'}</span>
         </button>
-        <button className="primary" onClick={scan} disabled={!pickedPath || scanning || restoring}>
+        <button className="primary" onClick={() => void scan()} disabled={!pickedPath || scanning || restoring} title="扫描所选位置；已有近期结果时直接使用">
           <ScanLine size={14} /> {restoring ? '正在连接…' : scanning ? '扫描中…' : '扫描'}
         </button>
+        {pickedPath && <button className="ghost icon" aria-label="重新扫描" title="重新读取磁盘，更新扫描结果" disabled={scanning || restoring} onClick={() => void scan(true)}><RefreshCw size={14}/></button>}
         <div className="grow" />
         <button className="ghost cache-cleaner-trigger" onClick={() => setShowCacheCleaner(true)}>
           <Brush size={15} />磁盘清理
@@ -150,7 +151,7 @@ function EmptyLeft() {
   return (
     <div className="empty">
       <div className="empty-title">还没扫描</div>
-      <div className="empty-sub">在顶栏选一个文件夹，然后点「扫描」。<br />扫完之后，左侧会列出每个文件夹和文件。</div>
+      <div className="empty-sub">在顶栏选择磁盘或文件夹，点击「扫描」。</div>
     </div>
   );
 }
@@ -162,26 +163,5 @@ function fmtMs(ms: number | null | undefined): string {
 }
 
 function DiagnosticsBar({ diag }: { diag: ScanDiag }) {
-  const b = diag.backend;
-  const parts: string[] = [];
-  if (b) {
-    parts.push(`mode=${b.mode}`);
-    if (b.mft_attempted) parts.push(`mft=${b.mft_succeeded ? 'ok' : 'fail'}/${fmtMs(b.mft_ms)}`);
-    if (b.mode === 'walkdir') {
-      parts.push(`walk=${fmtMs(b.walk_ms)}`);
-      parts.push(`build_tree=${fmtMs(b.build_tree_ms)}`);
-      parts.push(`dirs=${b.dirs_in_acc.toLocaleString()}`);
-    }
-    parts.push(`scanner=${fmtMs(b.scanner_total_ms)}`);
-    parts.push(`tag=${fmtMs(b.tag_ms)}`);
-  }
-  parts.push(`ipc=${fmtMs(diag.ipcMs)}`);
-  parts.push(`setRoot=${fmtMs(diag.setRootMs)}`);
-  parts.push(`total=${fmtMs(diag.totalMs)}`);
-  return (
-    <div className="diag-bar" title="扫描各阶段耗时">
-      <span className="diag-label">诊断</span>
-      <span className="diag-stats">{parts.join(' · ')}</span>
-    </div>
-  );
+  return <div className="diag-bar"><span className="diag-label">{diag.backend?.mode === 'shared_reuse' ? '使用近期扫描结果' : '扫描完成'}</span><span className="diag-stats">用时 {fmtMs(diag.totalMs)}</span></div>;
 }

@@ -14,7 +14,8 @@ use std::{
 
 const VERSION: u32 = 1;
 const MAX_RECORDS: usize = 100;
-const MAX_FILE_BYTES: u64 = 16 * 1024;
+const MAX_FILE_BYTES: u64 = 256 * 1024;
+const MAX_SELECTED_PROJECTS: usize = 512;
 const MAX_DIRECTORY_ENTRIES: usize = 1_000;
 const DIRECTORY: &str = "cleanup-history-v1";
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -210,7 +211,7 @@ pub fn start_record(
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         || selected_rules.is_empty()
-        || selected_rules.len() > 32
+        || selected_rules.len() > MAX_SELECTED_PROJECTS
         || selected_rules.iter().any(|r| {
             r.id.is_empty()
                 || r.id.len() > 64
@@ -396,6 +397,29 @@ pub async fn list_cleanup_history(app: tauri::AppHandle) -> Result<CleanupHistor
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn many_selected_projects_round_trip_with_a_bounded_summary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rules = (0..64)
+            .map(|index| super::HistoryRule {
+                id: format!("selected-{index}"),
+                title: format!("软件 {index}"),
+            })
+            .collect::<Vec<_>>();
+        let token = super::start_record(tmp.path(), "many-projects", rules).unwrap();
+        super::finish_record(&token, super::HistorySummary::default(), None).unwrap();
+        let history = super::read_history(tmp.path()).unwrap();
+        assert!(history.warnings.is_empty());
+        assert_eq!(history.records[0].selected_rules.len(), 64);
+        let excessive = (0..=super::MAX_SELECTED_PROJECTS)
+            .map(|index| super::HistoryRule {
+                id: format!("selected-{index}"),
+                title: format!("软件 {index}"),
+            })
+            .collect();
+        assert!(super::start_record(tmp.path(), "too-many-projects", excessive).is_err());
+        assert_eq!(super::read_history(tmp.path()).unwrap().records.len(), 1);
+    }
     #[test]
     fn legacy_recycle_records_keep_their_original_method_and_counts() {
         let begin: super::Begin = serde_json::from_value(serde_json::json!({

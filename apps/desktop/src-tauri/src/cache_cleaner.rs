@@ -25,6 +25,7 @@ const IDS: [&str; 14] = [
     "docker-desktop-cache",
     "opencode-cache",
 ];
+#[cfg(test)]
 const CHROMIUM_PROFILE_CACHES: [&str; 7] = [
     "Cache/Cache_Data",
     "Code Cache",
@@ -34,12 +35,14 @@ const CHROMIUM_PROFILE_CACHES: [&str; 7] = [
     "DawnWebGPUCache",
     "Media Cache",
 ];
+#[cfg(test)]
 const CHROMIUM_SHARED_CACHES: [&str; 4] = [
     "ShaderCache",
     "GrShaderCache",
     "GraphiteDawnCache",
     "GPUPersistentCache",
 ];
+#[cfg(test)]
 const ELECTRON_CACHE_ROOTS: [&str; 5] = [
     "Cache/Cache_Data",
     "Code Cache",
@@ -50,7 +53,275 @@ const ELECTRON_CACHE_ROOTS: [&str; 5] = [
 const MAX_ENTRIES_PER_RULE: usize = 50_000;
 const MAX_CANDIDATES_PER_RULE: usize = 20_000;
 const MAX_ACTIONS: usize = 10_000;
+const RECOMMENDED_LIMIT: usize = 200_000;
 const PREVIEW_TTL: Duration = Duration::from_secs(15 * 60);
+
+// Only reproducible browser/UI caches qualify for one-click recommendations.
+// Temporary documents, downloads, package caches and diagnostics stay manual.
+const RECOMMENDED_IDS: [&str; 9] = [
+    "chrome",
+    "edge",
+    "brave",
+    "firefox",
+    "cherry-studio-cache",
+    "chatbox-cache",
+    "lx-music-cache",
+    "docker-desktop-cache",
+    "opencode-cache",
+];
+
+pub(super) struct RecommendedPlan {
+    snapshot: Snapshot,
+    #[cfg(test)]
+    rules: Vec<String>,
+}
+
+#[derive(Default, Serialize, Clone)]
+pub(super) struct RecommendedPreview {
+    pub file_count: u64,
+    pub bytes: u64,
+    pub(super) groups: Vec<RecommendedGroup>,
+    pub(super) blocked_apps: Vec<String>,
+    pub(super) limited: bool,
+    pub(super) warning: Option<String>,
+}
+impl RecommendedPreview {
+    pub(super) fn unavailable() -> Self {
+        Self {
+            warning: Some("便捷清理项目暂未检查完成，请重新检查。".into()),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum RecommendationCategory {
+    ApplicationCache,
+    BuildCache,
+    Diagnostics,
+    Temporary,
+}
+
+#[derive(Serialize, Clone)]
+pub(super) struct RecommendedGroup {
+    pub(super) id: String,
+    pub(super) category: RecommendationCategory,
+    pub(super) title: String,
+    pub(super) file_count: u64,
+    pub(super) bytes: u64,
+}
+
+pub(super) fn prepare_recommended(
+    base: &Path,
+    roaming: Option<&Path>,
+    selected_roots: &[PathBuf],
+    cancel: &std::sync::atomic::AtomicBool,
+) -> (Option<RecommendedPlan>, RecommendedPreview) {
+    prepare_recommended_with_running(base, roaming, selected_roots, cancel, browser_running)
+}
+
+pub(super) fn prepare_recommended_with_running(
+    base: &Path,
+    roaming: Option<&Path>,
+    selected_roots: &[PathBuf],
+    cancel: &std::sync::atomic::AtomicBool,
+    running: impl Fn(&str) -> Result<bool, String>,
+) -> (Option<RecommendedPlan>, RecommendedPreview) {
+    let (snapshot, preview) = scan_filtered(
+        base,
+        roaming,
+        running,
+        MAX_ENTRIES_PER_RULE,
+        MAX_CANDIDATES_PER_RULE,
+        Duration::from_secs(30),
+        ScanFilter {
+            rules: &RECOMMENDED_IDS,
+            selected_roots: Some(selected_roots),
+            cancel: Some(cancel),
+        },
+    );
+    let mut info = RecommendedPreview {
+        blocked_apps: preview
+            .rules
+            .iter()
+            .filter(|rule| rule.status == "blocked" && rule.file_count > 0)
+            .map(|rule| processes(&rule.id).0.to_owned())
+            .filter(|app| !app.is_empty())
+            .collect(),
+        limited: !preview.warnings.is_empty(),
+        ..Default::default()
+    };
+    if cancel.load(std::sync::atomic::Ordering::Acquire) {
+        return (None, info);
+    }
+    let mut snapshot = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(_) => {
+            info.warning = Some("便捷清理项目暂未检查完成，请重新检查。".into());
+            return (None, info);
+        }
+    };
+    snapshot.candidates.retain(|file| {
+        RECOMMENDED_IDS.contains(&file.rule.as_str())
+            && selected_roots
+                .iter()
+                .any(|root| file.path.starts_with(root))
+    });
+    // The full-disk executor processes this immutable snapshot in bounded batches.
+    snapshot
+        .candidates
+        .sort_by_key(|file| std::cmp::Reverse(file.stamp.len));
+    if snapshot.candidates.len() > RECOMMENDED_LIMIT {
+        info.limited = true;
+    }
+    snapshot.candidates.truncate(RECOMMENDED_LIMIT);
+    let mut rules: Vec<String> = Vec::new();
+    for id in RECOMMENDED_IDS {
+        let files: Vec<_> = snapshot
+            .candidates
+            .iter()
+            .filter(|file| file.rule == id)
+            .collect();
+        if files.is_empty() {
+            continue;
+        }
+        let bytes = files.iter().map(|file| file.stamp.len).sum();
+        info.groups.push(RecommendedGroup {
+            id: format!("software:{id}"),
+            category: RecommendationCategory::ApplicationCache,
+            title: rule_title(id).into(),
+            file_count: files.len() as u64,
+            bytes,
+        });
+        rules.push(id.into());
+    }
+    info.file_count = snapshot.candidates.len() as u64;
+    info.bytes = snapshot.candidates.iter().map(|file| file.stamp.len).sum();
+    if rules.is_empty() {
+        return (None, info);
+    }
+    snapshot.created = SystemTime::now();
+    (
+        Some(RecommendedPlan {
+            snapshot,
+            #[cfg(test)]
+            rules,
+        }),
+        info,
+    )
+}
+
+#[cfg(test)]
+fn execute_recommended_with_running(
+    plan: RecommendedPlan,
+    base: &Path,
+    roaming: Option<&Path>,
+    available_roots: &[PathBuf],
+    app_data: &Path,
+    running: impl Fn(&str) -> Result<bool, String>,
+) -> Result<CleanupResult, String> {
+    if plan
+        .snapshot
+        .created
+        .elapsed()
+        .map_or(true, |age| age > PREVIEW_TTL)
+        || plan.snapshot.candidates.is_empty()
+        || plan.snapshot.candidates.iter().any(|file| {
+            !RECOMMENDED_IDS.contains(&file.rule.as_str())
+                || !available_roots
+                    .iter()
+                    .any(|root| file.path.starts_with(root))
+        })
+    {
+        return Err("便捷清理项目已失效，请重新检查。".into());
+    }
+    execute_recorded_snapshot_with_roaming(
+        plan.snapshot,
+        base,
+        roaming,
+        &plan.rules,
+        &app_data.join("cache-cleanup.jsonl"),
+        app_data,
+        running,
+        crate::direct_delete::delete,
+    )
+}
+
+// Opaque policy carried into the unified full-disk execution engine. It retains
+// the original cache identity and rule boundaries; IPC never supplies these paths.
+#[derive(Clone)]
+pub(super) struct RecommendedTarget {
+    pub path: PathBuf,
+    rule: &'static str,
+    root: PathBuf,
+    root_stamp: Stamp,
+    file_stamp: Stamp,
+    anchor: PathBuf,
+    anchor_stamp: Stamp,
+}
+impl RecommendedPlan {
+    pub(super) fn into_targets(self) -> Vec<RecommendedTarget> {
+        let snapshot = self.snapshot;
+        snapshot
+            .candidates
+            .into_iter()
+            .map(|file| {
+                let rule = *RECOMMENDED_IDS.iter().find(|id| **id == file.rule).unwrap();
+                let (anchor, anchor_stamp) = if electron_app(rule).is_some() {
+                    snapshot.roaming.as_ref().unwrap().clone()
+                } else {
+                    (snapshot.base.clone(), snapshot.base_stamp.clone())
+                };
+                RecommendedTarget {
+                    path: file.path,
+                    rule,
+                    root: file.root,
+                    root_stamp: file.root_stamp,
+                    file_stamp: file.stamp,
+                    anchor,
+                    anchor_stamp,
+                }
+            })
+            .collect()
+    }
+}
+impl RecommendedTarget {
+    pub(super) fn id(&self) -> &'static str {
+        self.rule
+    }
+    pub(super) fn size(&self) -> u64 {
+        self.file_stamp.len
+    }
+
+    pub(super) fn title(&self) -> &'static str {
+        rule_title(self.rule)
+    }
+    pub(super) fn valid_with_running(
+        &self,
+        running: &impl Fn(&str) -> Result<bool, String>,
+        held: Option<&File>,
+    ) -> bool {
+        RECOMMENDED_IDS.contains(&self.rule)
+            && !self.root.ends_with("Media Cache")
+            && self.path.starts_with(&self.root)
+            && directory_stamp(&self.anchor).ok().as_ref() == Some(&self.anchor_stamp)
+            && directory_stamp(&self.root).ok().as_ref() == Some(&self.root_stamp)
+            && held
+                .map_or_else(|| stamp(&self.path), stamp_handle)
+                .ok()
+                .as_ref()
+                == Some(&self.file_stamp)
+            && roots(&self.anchor, self.rule).is_ok_and(|roots| roots.contains(&self.root))
+            && processes_closed(self.rule, running).is_ok()
+            && eligible(
+                &self.path,
+                self.rule,
+                self.file_stamp.modified,
+                SystemTime::now(),
+            )
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct CacheCleanerState(Arc<Mutex<Inner>>);
@@ -117,6 +388,7 @@ pub fn start_cache_cleanup_scan(
     app: tauri::AppHandle,
     state: State<'_, CacheCleanerState>,
 ) -> Result<CacheScanSession, String> {
+    crate::rule_catalog::ensure_ready()?;
     if let Some(session) = session_snapshot(state.inner())?.filter(|s| s.status == "running") {
         return Ok(session);
     }
@@ -227,6 +499,7 @@ pub async fn preview_cache_cleanup(
     app: tauri::AppHandle,
     state: State<'_, CacheCleanerState>,
 ) -> Result<Preview, String> {
+    crate::rule_catalog::ensure_ready()?;
     let operation = crate::disk_cleaner::reserve_operation()?;
     let base = app.path().local_data_dir().map_err(err)?;
     let roaming = app.path().data_dir().map_err(err)?;
@@ -281,6 +554,7 @@ pub async fn execute_cache_cleanup(
     let log = app_data.join("cache-cleanup.jsonl");
     let shared = state.inner().clone();
     let snapshot = take_snapshot(&shared, &plan_id, &rule_ids)?;
+    crate::disk_cleaner::invalidate_shared_scan(&app);
     tokio::task::spawn_blocking(move || {
         let _operation = operation;
         struct Release(CacheCleanerState);
@@ -510,7 +784,7 @@ fn directory_stamp(path: &Path) -> io::Result<Stamp> {
 }
 
 #[cfg(windows)]
-fn browser_running(name: &str) -> Result<bool, String> {
+pub(super) fn browser_running(name: &str) -> Result<bool, String> {
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
         System::Diagnostics::ToolHelp::{
@@ -557,7 +831,7 @@ fn browser_running(name: &str) -> Result<bool, String> {
     }
 }
 #[cfg(not(windows))]
-fn browser_running(_: &str) -> Result<bool, String> {
+pub(super) fn browser_running(_: &str) -> Result<bool, String> {
     Err("当前仅支持 Windows 缓存清理".into())
 }
 
@@ -568,53 +842,60 @@ fn profile_name(name: &str) -> bool {
             .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 fn browser_root(base: &Path, id: &str) -> PathBuf {
-    base.join(match id {
-        "chrome" => "Google/Chrome/User Data",
-        "edge" => "Microsoft/Edge/User Data",
-        "brave" => "BraveSoftware/Brave-Browser/User Data",
-        "firefox" => "Mozilla/Firefox/Profiles",
-        _ => unreachable!("only browser rules have profile roots"),
-    })
+    base.join(
+        &crate::rule_catalog::legacy(id)
+            .expect("known browser rule")
+            .prefix,
+    )
 }
 fn electron_app(id: &str) -> Option<&'static str> {
-    match id {
-        "cherry-studio-cache" => Some("CherryStudio"),
-        "chatbox-cache" => Some("xyz.chatboxapp.app"),
-        "lx-music-cache" => Some("lx-music-desktop"),
-        "docker-desktop-cache" => Some("Docker Desktop"),
-        "opencode-cache" => Some("ai.opencode.desktop"),
-        _ => None,
-    }
+    crate::rule_catalog::legacy(id)
+        .filter(|r| r.family == "electron")
+        .map(|r| r.prefix.as_str())
 }
 fn roots(base: &Path, id: &str) -> io::Result<Vec<PathBuf>> {
     if let Some(app) = electron_app(id) {
-        return Ok(ELECTRON_CACHE_ROOTS
+        return Ok(crate::rule_catalog::template("electron_legacy")
             .iter()
             .map(|sub| base.join(app).join(sub))
             .collect());
     }
     if id == "temp" {
-        return Ok(vec![base.join("Temp")]);
+        return Ok(vec![base.join(
+            &crate::rule_catalog::legacy(id).expect("temp rule").prefix,
+        )]);
     }
     if id == "crash-dumps" {
-        return Ok(vec![base.join("CrashDumps")]);
+        return Ok(vec![base.join(
+            &crate::rule_catalog::legacy(id).expect("dump rule").prefix,
+        )]);
     }
     if id == "pip-cache" {
         return Ok(["http-v2", "http", "wheels"]
             .iter()
-            .map(|sub| base.join("pip/Cache").join(sub))
+            .map(|sub| {
+                base.join(&crate::rule_catalog::legacy(id).expect("pip rule").prefix)
+                    .join(sub)
+            })
             .collect());
     }
     if id == "npm-cache" {
         return Ok(["content-v2", "index-v5"]
             .iter()
-            .map(|sub| base.join("npm-cache/_cacache").join(sub))
+            .map(|sub| {
+                base.join(&crate::rule_catalog::legacy(id).expect("npm rule").prefix)
+                    .join("_cacache")
+                    .join(sub)
+            })
             .collect());
     }
     if id == "nvidia-shader" {
         return Ok(["DXCache", "GLCache"]
             .iter()
-            .map(|sub| base.join("NVIDIA").join(sub))
+            .map(|sub| {
+                base.join(&crate::rule_catalog::legacy(id).expect("shader rule").prefix)
+                    .join(sub)
+            })
             .collect());
     }
     if !["chrome", "edge", "brave", "firefox"].contains(&id) {
@@ -630,7 +911,7 @@ fn roots(base: &Path, id: &str) -> io::Result<Vec<PathBuf>> {
     let mut result = if id == "firefox" {
         Vec::new()
     } else {
-        CHROMIUM_SHARED_CACHES
+        crate::rule_catalog::template("chromium_shared")
             .iter()
             .map(|sub| browser.join(sub))
             .collect()
@@ -645,13 +926,12 @@ fn roots(base: &Path, id: &str) -> io::Result<Vec<PathBuf>> {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let subdirs: &[&str] = if id == "firefox" {
-                &["cache2/entries"]
+            if id == "firefox" {
+                result.push(entry.path().join("cache2/entries"));
             } else {
-                &CHROMIUM_PROFILE_CACHES
-            };
-            for sub in subdirs {
-                result.push(entry.path().join(sub));
+                for sub in crate::rule_catalog::template("chromium_profile") {
+                    result.push(entry.path().join(sub));
+                }
             }
         }
     }
@@ -660,67 +940,13 @@ fn roots(base: &Path, id: &str) -> io::Result<Vec<PathBuf>> {
 }
 
 fn retention_days(id: &str) -> Option<u64> {
-    match id {
-        "chrome"
-        | "edge"
-        | "brave"
-        | "firefox"
-        | "nvidia-shader"
-        | "cherry-studio-cache"
-        | "chatbox-cache"
-        | "lx-music-cache"
-        | "docker-desktop-cache"
-        | "opencode-cache" => Some(0),
-        "temp" => Some(7),
-        "pip-cache" | "npm-cache" | "crash-dumps" => Some(30),
-        _ => None,
-    }
+    crate::rule_catalog::legacy(id).map(|r| r.min_age_days)
 }
-
 pub(super) fn rule_title(id: &str) -> &str {
-    match id {
-        "temp" => "用户临时文件",
-        "cherry-studio-cache" => "Cherry Studio 缓存",
-        "chatbox-cache" => "Chatbox 缓存",
-        "lx-music-cache" => "洛雪音乐缓存",
-        "docker-desktop-cache" => "Docker Desktop 缓存",
-        "opencode-cache" => "OpenCode 缓存",
-        "chrome" => "Chrome 缓存",
-        "edge" => "Edge 缓存",
-        "brave" => "Brave 缓存",
-        "firefox" => "Firefox 缓存",
-        "pip-cache" => "Python 下载缓存",
-        "npm-cache" => "npm 下载缓存",
-        "nvidia-shader" => "NVIDIA 缓存空间参考",
-        "crash-dumps" => "崩溃转储",
-        _ => "未知清理项目",
-    }
+    crate::rule_catalog::legacy(id).map_or("未知清理项目", |r| r.title.as_str())
 }
-
-fn processes(id: &str) -> (&'static str, &'static [&'static str]) {
-    match id {
-        "cherry-studio-cache" => ("Cherry Studio", &["Cherry Studio.exe", "CherryStudio.exe"]),
-        "docker-desktop-cache" => ("Docker Desktop", &["Docker Desktop.exe"]),
-        "opencode-cache" => ("OpenCode", &["OpenCode.exe"]),
-        "lx-music-cache" => ("洛雪音乐", &["lx-music-desktop.exe"]),
-        "chatbox-cache" => ("Chatbox", &["Chatbox.exe", "Chatbox CE.exe"]),
-        "chrome" => ("Chrome", &["chrome.exe"]),
-        "edge" => ("Edge", &["msedge.exe"]),
-        "brave" => ("Brave", &["brave.exe"]),
-        "firefox" => ("Firefox", &["firefox.exe"]),
-        "pip-cache" => (
-            "Python 和 pip",
-            &[
-                "python.exe",
-                "pythonw.exe",
-                "python3.exe",
-                "py.exe",
-                "pip.exe",
-                "pip3.exe",
-            ],
-        ),
-        _ => ("", &[]),
-    }
+fn processes(id: &str) -> (&'static str, &'static [String]) {
+    crate::rule_catalog::legacy(id).map_or(("", &[]), |r| (r.app.as_str(), r.processes.as_slice()))
 }
 
 fn processes_closed(
@@ -816,6 +1042,42 @@ fn scan_with_limits_with_roaming(
     candidate_limit: usize,
     time_limit: Duration,
 ) -> (Result<Snapshot, String>, Preview) {
+    scan_filtered(
+        base,
+        roaming,
+        running,
+        entry_limit,
+        candidate_limit,
+        time_limit,
+        ScanFilter {
+            rules: &IDS,
+            selected_roots: None,
+            cancel: None,
+        },
+    )
+}
+
+struct ScanFilter<'a> {
+    rules: &'static [&'static str],
+    selected_roots: Option<&'a [PathBuf]>,
+    cancel: Option<&'a std::sync::atomic::AtomicBool>,
+}
+impl ScanFilter<'_> {
+    fn cancelled(&self) -> bool {
+        self.cancel
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire))
+    }
+}
+
+fn scan_filtered(
+    base: &Path,
+    roaming: Option<&Path>,
+    running: impl Fn(&str) -> Result<bool, String>,
+    entry_limit: usize,
+    candidate_limit: usize,
+    time_limit: Duration,
+    filter: ScanFilter<'_>,
+) -> (Result<Snapshot, String>, Preview) {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let now = SystemTime::now();
     let id = format!(
@@ -839,7 +1101,10 @@ fn scan_with_limits_with_roaming(
             .map(|stamp| (p.to_path_buf(), stamp))
     });
     let mut candidates = Vec::new();
-    for id in IDS {
+    for &id in filter.rules {
+        if filter.cancelled() {
+            break;
+        }
         let start = Instant::now();
         let mut visited = 0;
         let mut limited = false;
@@ -904,6 +1169,13 @@ fn scan_with_limits_with_roaming(
         } else {
             base
         };
+        if filter
+            .selected_roots
+            .is_some_and(|selected| !selected.iter().any(|drive| anchor.starts_with(drive)))
+        {
+            preview.rules.push(rule);
+            continue;
+        }
         let roots = match roots(anchor, id) {
             Ok(r) => r,
             Err(e) => {
@@ -916,6 +1188,15 @@ fn scan_with_limits_with_roaming(
         let mut found_root = false;
         let mut incomplete = false;
         for root in roots {
+            if filter.selected_roots.is_some() && root.ends_with("Media Cache") {
+                continue;
+            }
+            if filter
+                .selected_roots
+                .is_some_and(|selected| !selected.iter().any(|drive| root.starts_with(drive)))
+            {
+                continue;
+            }
             match fs::symlink_metadata(&root) {
                 Ok(_) => {
                     found_root = true;
@@ -939,7 +1220,8 @@ fn scan_with_limits_with_roaming(
             };
             let mut stack = vec![root.clone()];
             while let Some(dir) = stack.pop() {
-                if visited >= entry_limit
+                if filter.cancelled()
+                    || visited >= entry_limit
                     || rule.file_count >= candidate_limit as u64
                     || start.elapsed() > time_limit
                 {
@@ -966,7 +1248,8 @@ fn scan_with_limits_with_roaming(
                 };
                 for entry in entries {
                     visited += 1;
-                    if visited > entry_limit
+                    if filter.cancelled()
+                        || visited > entry_limit
                         || rule.file_count >= candidate_limit as u64
                         || start.elapsed() > time_limit
                     {
@@ -1326,6 +1609,190 @@ mod tests {
         "docker-desktop-cache",
         "opencode-cache",
     ];
+
+    #[test]
+    fn recommended_only_selects_verified_reproducible_caches_in_selected_roots() {
+        let local = tempfile::tempdir().unwrap();
+        let roaming = tempfile::tempdir().unwrap();
+        let cache = old_file(
+            local.path(),
+            "Google/Chrome/User Data/Default/Cache/Cache_Data/owned",
+            8,
+        );
+        for file in [
+            "Temp/document.tmp",
+            "Programs/Python/Python313/Lib/test/sample.part",
+            "pip/Cache/http-v2/data",
+            "npm-cache/_cacache/content-v2/aa/bb/content",
+            "CrashDumps/error.dmp",
+            "NVIDIA/DXCache/data",
+            "Google/Chrome/User Data/Default/History",
+            "Google/Chrome/User Data/Default/Media Cache/offline",
+        ] {
+            old_file(local.path(), file, 40);
+        }
+        old_file(roaming.path(), "chatbox/Cache/Cache_Data/off-drive", 8);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let roots = [local.path().to_path_buf()];
+        let (plan, info) = prepare_recommended_with_running(
+            local.path(),
+            Some(roaming.path()),
+            &roots,
+            &cancel,
+            |_| Ok(false),
+        );
+        let plan = plan.unwrap();
+        assert_eq!(info.file_count, 1);
+        assert_eq!(info.bytes, fs::metadata(&cache).unwrap().len());
+        assert_eq!(plan.snapshot.candidates[0].path, cache);
+        assert_eq!(plan.rules, vec!["chrome"]);
+        assert_eq!(info.groups.len(), 1);
+        assert!(info.blocked_apps.is_empty());
+    }
+
+    #[test]
+    fn recommended_does_not_scan_or_select_other_drives_and_cancels_without_plan() {
+        let local = tempfile::tempdir().unwrap();
+        let selected = tempfile::tempdir().unwrap();
+        old_file(
+            local.path(),
+            "Google/Chrome/User Data/Default/GPUCache/owned",
+            8,
+        );
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let (plan, info) = prepare_recommended_with_running(
+            local.path(),
+            None,
+            &[selected.path().to_path_buf()],
+            &cancel,
+            |_| Ok(false),
+        );
+        assert!(plan.is_none());
+        assert_eq!(info.file_count, 0);
+        cancel.store(true, std::sync::atomic::Ordering::Release);
+        let (plan, info) = prepare_recommended_with_running(
+            local.path(),
+            None,
+            &[local.path().to_path_buf()],
+            &cancel,
+            |_| Ok(false),
+        );
+        assert!(plan.is_none());
+        assert_eq!(info.file_count, 0);
+    }
+
+    #[test]
+    fn recommended_blocks_running_or_unknown_process_state() {
+        let local = tempfile::tempdir().unwrap();
+        let path = old_file(
+            local.path(),
+            "Google/Chrome/User Data/Default/GPUCache/owned",
+            8,
+        );
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let roots = [local.path().to_path_buf()];
+        let (plan, info) =
+            prepare_recommended_with_running(local.path(), None, &roots, &cancel, |name| {
+                Ok(name == "chrome.exe")
+            });
+        assert!(plan.is_none());
+        assert_eq!(info.file_count, 0);
+        assert!(info.blocked_apps.iter().any(|app| app == "Chrome"));
+        let (plan, _) =
+            prepare_recommended_with_running(local.path(), None, &roots, &cancel, |_| {
+                Err("unavailable".into())
+            });
+        assert!(plan.is_none());
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn recommended_deletion_leaves_manual_files_and_records_only_recommended_rules() {
+        let local = tempfile::tempdir().unwrap();
+        let records = tempfile::tempdir().unwrap();
+        let cache = old_file(
+            local.path(),
+            "Google/Chrome/User Data/Default/GPUCache/owned",
+            8,
+        );
+        let manual = old_file(
+            local.path(),
+            "Programs/Python/Python313/Lib/test/sample.part",
+            40,
+        );
+        let document = old_file(local.path(), "Temp/unsaved.tmp", 40);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let roots = [local.path().to_path_buf()];
+        let (plan, info) =
+            prepare_recommended_with_running(local.path(), None, &roots, &cancel, |_| Ok(false));
+        let result = execute_recommended_with_running(
+            plan.unwrap(),
+            local.path(),
+            None,
+            &roots,
+            records.path(),
+            |_| Ok(false),
+        )
+        .unwrap();
+        assert_eq!(result.deleted_files, info.file_count);
+        assert_eq!(result.deleted_bytes, info.bytes);
+        assert!(!cache.exists());
+        assert!(manual.exists() && document.exists());
+        let history = crate::cleanup_history::read_history(records.path()).unwrap();
+        assert_eq!(history.records[0].selected_rules.len(), 1);
+        assert_eq!(history.records[0].selected_rules[0].id, "chrome");
+        assert!(history.records[0].permanent_delete);
+    }
+
+    #[test]
+    fn recommended_rechecks_expiration_drive_and_process_before_any_delete() {
+        let local = tempfile::tempdir().unwrap();
+        let records = tempfile::tempdir().unwrap();
+        let path = old_file(
+            local.path(),
+            "Google/Chrome/User Data/Default/GPUCache/owned",
+            8,
+        );
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let roots = [local.path().to_path_buf()];
+        let make = || {
+            prepare_recommended_with_running(local.path(), None, &roots, &cancel, |_| Ok(false))
+                .0
+                .unwrap()
+        };
+        let mut expired = make();
+        expired.snapshot.created = SystemTime::now() - Duration::from_secs(901);
+        assert!(execute_recommended_with_running(
+            expired,
+            local.path(),
+            None,
+            &roots,
+            records.path(),
+            |_| Ok(false)
+        )
+        .is_err());
+        assert!(execute_recommended_with_running(
+            make(),
+            local.path(),
+            None,
+            &[],
+            records.path(),
+            |_| Ok(false)
+        )
+        .is_err());
+        let result = execute_recommended_with_running(
+            make(),
+            local.path(),
+            None,
+            &roots,
+            records.path(),
+            |_| Ok(true),
+        )
+        .unwrap();
+        assert_eq!(result.deleted_files, 0);
+        assert!(result.skipped_files > 0);
+        assert!(path.exists());
+    }
 
     #[test]
     fn cache_cleaner_roaming_only_known_caches_and_recorded_execution() {

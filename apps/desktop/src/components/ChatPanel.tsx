@@ -10,6 +10,10 @@ import { freeChat, overviewChat } from '../advisorClient';
 import type { Node, AdvisorResponse } from '../types';
 import { ReplyTiming } from './ReplyTiming';
 
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).replace(/^Error:\s*/i, '');
+}
+
 function uid() {
   return Math.random().toString(36).slice(2);
 }
@@ -54,6 +58,7 @@ function buildOverviewSummary(root: Node) {
 
 export function ChatPanel() {
   const root = useStore((s) => s.root);
+  const rootKey = useStore((s) => s.rootKey);
   const chat = useStore((s) => s.chat);
   const pushTurn = useStore((s) => s.pushChatTurn);
   const patchTurn = useStore((s) => s.patchChatTurn);
@@ -67,7 +72,8 @@ export function ChatPanel() {
   const [dropping, setDropping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const overviewFiredFor = useRef<Node | null>(null);
+  const overviewFiredFor = useRef(new WeakSet<Node>());
+  const overviewKeys = useRef(new Map<string, number>());
   const requestInFlight = useRef(false);
 
   const node = chat.node;
@@ -75,11 +81,22 @@ export function ChatPanel() {
   // Wait for an ongoing conversation request, then summarize each scan once.
   useEffect(() => {
     if (!root || chat.busy || requestInFlight.current) return;
-    if (overviewFiredFor.current === root) return;
-    overviewFiredFor.current = root;
+    if (rootKey) {
+      const keys = overviewKeys.current;
+      if (keys.has(rootKey)) return;
+      const now = Date.now();
+      // Remember identities only, never another copy of a tree or AI response.
+      // Old identities cannot be returned by the backend after its 15-minute TTL.
+      for (const [key, at] of keys) if (now - at > 15 * 60 * 1000) keys.delete(key);
+      keys.set(rootKey, now);
+      if (keys.size > 256) keys.delete(keys.keys().next().value!);
+    } else {
+      if (overviewFiredFor.current.has(root)) return;
+      overviewFiredFor.current.add(root);
+    }
     void runOverview(root);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [root, chat.busy]);
+  }, [root, rootKey, chat.busy]);
 
   // No more auto-advice on node change — the user runs ONE conversation,
   // dropped items become pending pills until they send.
@@ -97,7 +114,7 @@ export function ChatPanel() {
     pushTurn({
       id: turnId,
       role: 'assistant',
-      text: `已扫完 ${r.path} · ${formatBytes(r.size)} · ${r.file_count.toLocaleString()} 个文件。AI 正在生成整体解析…`,
+      text: `已扫描 ${r.path}（${formatBytes(r.size)}，${r.file_count.toLocaleString()} 个文件），正在生成总览…`,
       pending: true,
       requestStartedAt,
     });
@@ -107,7 +124,7 @@ export function ChatPanel() {
       patchTurn(turnId, { text: reply, pending: false, durationMs: performance.now() - requestStartedAt });
     } catch (e) {
       patchTurn(turnId, {
-        text: `（AI 总览失败：${String(e)}）\n你可以从左边把任意文件夹/文件拖进来问。`,
+        text: `未能生成总览：${errorText(e)}`,
         pending: false,
         failed: true,
         durationMs: performance.now() - requestStartedAt,
@@ -136,7 +153,7 @@ export function ChatPanel() {
     pushTurn({ id: uid(), role: 'user', text: userText });
     setBusy(true);
     const turnId = uid();
-    pushTurn({ id: turnId, role: 'assistant', text: '思考中…', pending: true, requestStartedAt });
+    pushTurn({ id: turnId, role: 'assistant', text: '等待回复…', pending: true, requestStartedAt });
 
     try {
       const targets = drops.length > 0 && root
@@ -171,7 +188,7 @@ export function ChatPanel() {
       );
       patchTurn(turnId, { text: reply, pending: false, durationMs: performance.now() - requestStartedAt });
     } catch (e) {
-      patchTurn(turnId, { text: `AI 调用失败：${String(e)}`, pending: false, failed: true, durationMs: performance.now() - requestStartedAt });
+      patchTurn(turnId, { text: `请求失败：${errorText(e)}`, pending: false, failed: true, durationMs: performance.now() - requestStartedAt });
     } finally {
       requestInFlight.current = false;
       setBusy(false);
@@ -246,7 +263,7 @@ export function ChatPanel() {
       pushTurn({ id: uid(), role: 'system', text: `已直接删除 ${target.path} · 文件大小 ${formatBytes(target.size)}` });
     } catch (e) {
       deletingPaths.current.delete(target.path);
-      pushTurn({ id: uid(), role: 'system', text: `删除失败：${String(e)}` });
+      pushTurn({ id: uid(), role: 'system', text: `删除失败：${errorText(e)}` });
     }
   };
 
@@ -265,11 +282,7 @@ export function ChatPanel() {
           <div className="chat-title">
             {root ? (root.name || root.path) : 'Pinkbin AI'}
           </div>
-          <div className="chat-sub">
-            {root
-              ? `${root.path} · ${formatBytes(root.size)} · ${root.file_count.toLocaleString()} 文件`
-              : '随时开始对话，扫描后可结合磁盘分析'}
-          </div>
+          {root && <div className="chat-sub">{`${root.path} · ${formatBytes(root.size)} · ${root.file_count.toLocaleString()} 文件`}</div>}
         </div>
         {chat.turns.length > 0 && (
           <button className="ghost icon" onClick={resetChat} title="清空对话" aria-label="清空对话" disabled={chat.busy}><X size={16} /></button>
@@ -281,14 +294,14 @@ export function ChatPanel() {
           <div className="chat-hero">
             <MessageSquare size={32} />
             <h3>Pinkbin AI</h3>
-            <p>可以先聊聊你想清理什么，或贴张图片问我。<br />需要判断具体文件时，再扫描磁盘，把文件或文件夹拖进来。</p>
+            <p>直接提问或粘贴图片；扫描后可拖入文件分析。</p>
             {!isTauri && <p className="muted">浏览器预览模式：扫描数据是模拟的，但 AI 会走真实接口。</p>}
           </div>
         )}
         {empty && root && (
           <div className="chat-hero">
             <Sparkles size={28} />
-            <p>可以围绕扫描结果提问，也可以把左侧文件或文件夹拖进来。</p>
+            <p>直接提问，或从左侧拖入文件、文件夹。</p>
           </div>
         )}
         {chat.turns.map((t) => (
@@ -309,7 +322,6 @@ export function ChatPanel() {
             )}
           </div>
         ))}
-        {chat.busy && <div className="chat-typing">AI 正在打字…</div>}
       </div>
 
       <div className="chat-input-wrap">
@@ -354,7 +366,7 @@ export function ChatPanel() {
             type="button"
             className="ghost icon chat-attach"
             onClick={() => fileInputRef.current?.click()}
-            title="加图片（也可以粘贴/拖进来）"
+            title="添加图片"
             disabled={chat.busy}
           >
             <ImagePlus size={15} />
@@ -362,7 +374,7 @@ export function ChatPanel() {
           <textarea
             rows={2}
             aria-label="消息"
-            placeholder={root ? '问 AI：这是什么？能删吗？把文件 / 图片拖进来…（图片粘贴也行）' : '直接输入问题，或贴张图片来问…'}
+            placeholder={root ? '输入问题，或拖入文件、粘贴图片…' : '输入问题，或粘贴、拖入图片…'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onPaste={onPaste}
